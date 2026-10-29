@@ -64,13 +64,13 @@ function route() {
   const requested=location.hash.slice(1) || 'overview';
   const page=requested==='learning'?'followups':requested;
   if(requested==='learning')history.replaceState(null,'','#followups');
-  state.page=['overview','inbox','capture','followups','catalog','connections'].includes(page)?page:'overview';
+  state.page=['overview','inbox','capture','followups','catalog','connections','pesashield'].includes(page)?page:'overview';
   document.querySelectorAll('.page').forEach(element=>{element.hidden=element.id!=='page-'+state.page;});
   document.querySelectorAll('[data-nav]').forEach(link=>{
     const selected=link.dataset.nav===state.page;link.classList.toggle('active',selected);
     if(selected)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
   });
-  $('page-label').textContent={overview:'Opportunities',inbox:'Signal inbox',capture:'Capture request',followups:'Follow-up queue',catalog:'Product aliases',connections:'Channels & import'}[state.page];
+  $('page-label').textContent={overview:'Opportunities',inbox:'Signal inbox',capture:'Capture request',followups:'Follow-up queue',catalog:'Product aliases',connections:'Channels & import',pesashield:'PesaShield AI'}[state.page];
   window.scrollTo(0,0);
   if(state.page==='inbox')loadSignals().catch(showError);
   if(state.page==='catalog')loadCatalog().catch(showError);
@@ -262,6 +262,9 @@ for(const [id,key] of [['followups-owner','owner'],['followups-urgency','urgency
 }
 document.querySelectorAll('[data-followup-status]').forEach(button=>button.onclick=()=>{
   state.followups.status=button.dataset.followupStatus;state.followups.page=1;
+  const completed=['recovered','closed'].includes(state.followups.status);
+  if(completed){state.followups.due='all';$('followups-due').value='all';}
+  $('followups-due').disabled=completed;
   document.querySelectorAll('[data-followup-status]').forEach(tab=>{const active=tab===button;tab.classList.toggle('active',active);tab.setAttribute('aria-pressed',String(active));});
   loadFollowups();
 });
@@ -336,3 +339,48 @@ $('export').onclick=()=>busy($('export'),'Preparing CSV…',async()=>{
   catch(error){toast(error.message,true);}
 });
 route();refresh();if(state.page!=='followups')loadFollowups();
+
+
+async function loadFraudInsights(){
+  try{
+    const res = await fetch(api('/api/pesashield/insights'));
+    if(!res.ok) return;
+    const data = await res.json();
+    if($('fraud-total')) $('fraud-total').textContent = data.kpis.total;
+    if($('fraud-scam')) $('fraud-scam').textContent = data.kpis.scam;
+    if($('fraud-suspicious')) $('fraud-suspicious').textContent = data.kpis.suspicious;
+    if($('fraud-reviewed')) $('fraud-reviewed').textContent = data.kpis.reviewed;
+  }catch(e){}
+}
+
+async function loadFraudReports(){
+  try{
+    const res = await fetch(api('/api/pesashield/reports'));
+    if(!res.ok) return;
+    const data = await res.json();
+    const rows = $('fraud-rows');
+    if(!rows) return;
+    if(!data.items.length){rows.innerHTML='<tr><td colspan="6">No reports yet.</td></tr>';return;}
+    rows.innerHTML = data.items.map(r=>`<tr><td><small>${esc(r.ts?.slice(0,16)||'')}</small></td><td><span class="tag ${r.verdict==='scam'?'amber':r.verdict==='suspicious'?'blue':''}">${esc(r.verdict)}</span>${r.reviewed_verdict?'<small>✓ '+esc(r.reviewed_verdict)+'</small>':''}</td><td>${r.risk_score?.toFixed? r.risk_score.toFixed(2):r.risk_score}</td><td><small>${(r.reason_codes||[]).join(', ')}</small></td><td><small>${esc(r.body_preview)}</small></td><td><button class="button small" data-fraud-review="${r.id}" data-verdict="scam">Mark scam</button> <button class="button small" data-fraud-review="${r.id}" data-verdict="legit">Mark legit</button></td></tr>`).join('');
+    rows.querySelectorAll('[data-fraud-review]').forEach(btn=>{
+      btn.onclick=async()=>{
+        const id=btn.dataset.fraudReview, verdict=btn.dataset.verdict;
+        const res=await fetch(api('/api/pesashield/reports/'+id+'/review'),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({verdict})});
+        if(res.ok){toast('Review saved');loadFraudReports();loadFraudInsights();}
+        else{const j=await res.json().catch(()=>({}));toast(j.error||'Failed');}
+      };
+    });
+  }catch(e){}
+}
+
+async function loadFraudModel(){
+  try{
+    const res = await fetch(api('/api/pesashield/model'));
+    if(!res.ok) return;
+    const data = await res.json();
+    const el = $('fraud-model-status');
+    if(!el) return;
+    el.innerHTML = `<small>Ready: ${data.ready?'yes':'no'} · Threshold: ${data.threshold}<br>Version: ${data.metadata?.version||'-'}</small>`;
+  }catch(e){}
+}
+

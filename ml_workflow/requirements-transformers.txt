@@ -1,0 +1,9 @@
+# Optional recipes. Use a separate Python 3.11/3.12 environment.
+# Resolve and freeze exact versions on your training machine after the smoke run.
+-r requirements.txt
+setfit>=1.1,<2
+sentence-transformers[train]>=3.4,<6
+transformers>=4.48,<5
+datasets>=3,<5
+accelerate>=1,<2
+seqeval>=1.2,<2

@@ -1,0 +1,75 @@
+{
+  "source": "ml_workflow/work/data/reasons.csv",
+  "sha256": "e923d5a410a735abfac367ae2d119679c15e78da5bd6096d28ce637f33e533ba",
+  "grain": "one labeled customer-request context",
+  "rows": 108,
+  "columns": [
+    "id",
+    "text",
+    "reason",
+    "source",
+    "conversation_id",
+    "group_id",
+    "captured_at",
+    "origin",
+    "is_synthetic",
+    "verified"
+  ],
+  "missing": {
+    "id": 0,
+    "text": 0,
+    "reason": 0,
+    "source": 0,
+    "conversation_id": 0,
+    "group_id": 0,
+    "captured_at": 108,
+    "origin": 0,
+    "is_synthetic": 0,
+    "verified": 0
+  },
+  "labels": {
+    "out_of_stock": 18,
+    "price_too_high": 18,
+    "not_stocked": 18,
+    "quote_rejected": 18,
+    "lead_time": 18,
+    "abandoned": 18
+  },
+  "unknown_labels": 0,
+  "sources": {
+    "synthetic": 108
+  },
+  "origins": {
+    "ghostdemand_synthetic_starter": 108
+  },
+  "synthetic_rows": 108,
+  "duplicate_ids": 0,
+  "duplicate_text_rows": 0,
+  "conflicting_text_groups": 0,
+  "linked_groups": 108,
+  "text_characters": {
+    "0": 24.0,
+    "25": 43.75,
+    "50": 49.0,
+    "75": 57.25,
+    "95": 64.0,
+    "100": 72.0
+  },
+  "possible_paraphrases": [
+    {
+      "ids": [
+        "starter-046",
+        "starter-093"
+      ],
+      "similarity": 0.828
+    },
+    {
+      "ids": [
+        "starter-058",
+        "starter-102"
+      ],
+      "similarity": 0.885
+    }
+  ],
+  "note": "No raw messages included in this report. Near-duplicate candidates require manual review; this is not exhaustive."
+}

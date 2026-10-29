@@ -1,0 +1,1 @@
+{"id":"schema-only-001","tokens":["Need","2","navy","shirts","under","2000","KES","in","Nairobi"],"ner_tags":["O","B-QUANTITY","B-PRODUCT","I-PRODUCT","O","B-BUDGET","B-CURRENCY","O","B-LOCATION"],"group_id":"synthetic-schema-001","split":"train","origin":"synthetic_schema_only"}

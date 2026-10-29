@@ -1,0 +1,3 @@
+# Small lessons; the existing app environment already supplies these.
+scikit-learn>=1.5,<2
+Flask>=3,<4

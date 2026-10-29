@@ -7,18 +7,24 @@ import math
 import os
 import re
 import secrets
+import hmac
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import click
-from flask import Flask, Response, g, has_request_context, jsonify, render_template, request
+from flask import Flask, Response, g, has_request_context, jsonify, render_template, request, send_file
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.exceptions import HTTPException
 
 from demand_ml import REASON_LABELS, ReasonClassifier, TrainingError
-from intelligence import CURRENCIES, REASON_NAMES, SOURCE_NAMES, STATUSES, detect_currency, enrich_signal, follow_up_queue, product_key, summarize
+from fraud_ml import SCAM_LABELS, ScamClassifier, TrainingError as FraudTrainingError, STARTER_PATH as FRAUD_STARTER_PATH
+from intelligence import (
+    CURRENCIES, KINDS, REASON_NAMES, SOURCE_NAMES, STATUSES, attach_groups, detect_currency,
+    enrich_signal, extract_specifications, follow_up_queue, parse_conversation, product_key,
+    request_kind, summarize,
+)
 
 ROOT = Path(__file__).resolve().parent
 app = Flask(__name__, template_folder=str(ROOT))
@@ -37,6 +43,13 @@ ML = ReasonClassifier(
     threshold=float(os.environ.get("GHOST_ML_THRESHOLD", "0.55")),
 )
 DEMO_ML = ReasonClassifier(ROOT / "models" / "demo_reason_classifier.json")
+FRAUD_ML = ScamClassifier(
+    os.environ.get("GHOST_FRAUD_ML_PATH", str(ROOT / "models" / "scam_classifier.json")),
+    enabled=os.environ.get("GHOST_FRAUD_ML_ENABLED", "1").lower() not in ("0", "false", "no"),
+    threshold=float(os.environ.get("GHOST_FRAUD_ML_THRESHOLD", "0.6")),
+)
+DEMO_FRAUD_ML = ScamClassifier(ROOT / "models" / "demo_scam_classifier.json")
+PESASHIELD_ENABLED = os.environ.get("PESASHIELD_ENABLED", "1").lower() not in ("0", "false", "no")
 SOURCES = list(SOURCE_NAMES)
 
 
@@ -46,6 +59,10 @@ def is_demo():
 
 def active_model():
     return DEMO_ML if is_demo() else ML
+
+
+def active_fraud_model():
+    return DEMO_FRAUD_ML if is_demo() else FRAUD_ML
 
 
 # ---------- storage (additive migration preserves existing signals) ----------
@@ -65,6 +82,7 @@ def db():
             "status": "TEXT NOT NULL DEFAULT 'open'", "owner": "TEXT", "next_action": "TEXT",
             "recovered_amount": "REAL", "recovered_currency": "TEXT", "updated_at": "TEXT",
             "follow_up_on": "TEXT",
+            "specifications": "TEXT", "kind": "TEXT NOT NULL DEFAULT 'product'",
         }
         columns = {row[1] for row in g.db.execute("PRAGMA table_info(signals)")}
         if set(additions) - columns:
@@ -80,6 +98,19 @@ def db():
             id INTEGER PRIMARY KEY, name TEXT NOT NULL, sku TEXT, created_at TEXT NOT NULL)""")
         g.db.execute("""CREATE TABLE IF NOT EXISTS product_aliases(
             alias_key TEXT PRIMARY KEY, catalog_id INTEGER NOT NULL REFERENCES catalog(id))""")
+        g.db.execute("""CREATE TABLE IF NOT EXISTS fraud_messages(
+            id INTEGER PRIMARY KEY, ts TEXT, channel TEXT, sender_hash TEXT, sender_raw_hash_algo TEXT,
+            body_hash TEXT, body TEXT, urls_json TEXT, amounts_json TEXT, mpesa_refs_json TEXT,
+            extracted_till TEXT, extracted_account TEXT, risk_score REAL, verdict TEXT,
+            reason_codes_json TEXT, model_version TEXT, ml_confidence REAL, reason_engine TEXT,
+            reviewed_verdict TEXT, reviewed_at TEXT, reviewed_by TEXT, status TEXT DEFAULT 'open',
+            location_hint TEXT)""")
+        g.db.execute("""CREATE TABLE IF NOT EXISTS fraud_transactions(
+            id INTEGER PRIMARY KEY, ts TEXT, amount REAL, currency TEXT DEFAULT 'KES',
+            sender_hash TEXT, recipient_hash TEXT, channel TEXT, device_hint TEXT, hour_of_day INTEGER,
+            is_new_recipient INTEGER, velocity_24h INTEGER, risk_score REAL, verdict TEXT, flags_json TEXT,
+            reviewed_verdict TEXT, reviewed_at TEXT)""")
+        g.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS fraud_msg_dedup ON fraud_messages(channel,body_hash,sender_hash)")
     return g.db
 
 
@@ -92,9 +123,12 @@ def close(_):
 
 # ---------- free text -> structured demand signal ----------
 REASONS = {
-    "out_of_stock": r"out of stock|sold out|no stock|finished|unavailable|restock|not in stock",
+    "out_of_stock": r"out of stock|sold out|no stock|finished|restock|not in stock|stock was depleted|zero units|inventory is exhausted",
     "price_too_high": r"too (expensive|high|much)|cheaper|discount|pricey|over budget|lower price|best price",
-    "not_stocked": r"don'?t (have|sell|stock)|not available|do you (have|sell|stock)|looking for|any .* available",
+    "unsupported_service": r"don'?t (offer|provide|do) (that |this )?(service|install|repair)|we (do not|don't) (install|repair|assemble|deliver)|"
+                           r"service not (available|offered|supported)|not a service we|cannot (install|repair|assemble)|we only sell",
+    "not_stocked": r"don'?t (have|sell|stock)|do not (carry|sell|stock)|not available|never stocked|outside our (range|assortment)|"
+                   r"not (in|part of) (our )?(range|catalogue|catalog)|we do not carry",
     "quote_rejected": r"declined|rejected|went (with|elsewhere)|competitor|chose another|lost the (deal|quote)",
     "lead_time": r"too long|delivery time|lead time|when (will|can)|wait",
     "abandoned": r"abandon|never replied|went quiet|left the (cart|chat)|no response|ghosted",
@@ -116,11 +150,13 @@ def normalize(product):
 def rule_extract(text, source):
     text = text.strip()
     low = text.lower()
-    reason = next((r for r, pattern in REASONS.items() if r != "not_stocked" and re.search(pattern, low)), None)
+    reason = next((r for r, pattern in REASONS.items() if r not in ("not_stocked", "unsupported_service") and re.search(pattern, low)), None)
+    if not reason and re.search(REASONS["unsupported_service"], low):
+        reason = "unsupported_service"
     if not reason and re.search(REASONS["not_stocked"], low):
         reason = "not_stocked"
     reason = reason or {"out_of_stock": "out_of_stock", "rejected_quote": "quote_rejected",
-                        "abandoned_enquiry": "abandoned", "website_search": "not_stocked"}.get(source, "not_stocked")
+                        "abandoned_enquiry": "abandoned", "unavailable_product": "not_stocked"}.get(source, "unknown")
     qty = re.search(r"(\d{1,9})\s*(?:pcs|pieces|units|bags|boxes|cartons|kg|litres|liters|tons?|x)\b", low) \
         or re.search(r"\b(\d{1,5})\s+(?=[a-z])", low)
     budget = re.search(r"(?:kshs?|kes|usd|eur|gbp|ugx|tzs|\$|€|£|budget(?: of)?|up to)\s*([\d,]+(?:\.\d+)?k?)", low)
@@ -131,12 +167,14 @@ def rule_extract(text, source):
     product = prod.group(1) if prod else (text if len(text.split()) <= 6 else " ".join(text.split()[:6]))
     product = re.sub(r"^\d+(?:\s*(?:pcs|pieces|units|bags|boxes|cartons|kg|litres|liters|tons?|x)\b\s*|\s+)(?:of\s+)?",
                      "", product.strip(), flags=re.I).strip(" -:") or text[:80]
+    specifications = extract_specifications(text) or extract_specifications(product) or None
     sentiment = "negative" if re.search(NEG, low) else "positive" if re.search(POS, low) else "neutral"
     urgency = 3 if re.search(URGENT, low) else 2 if reason in ("out_of_stock", "quote_rejected") else 1
     money = parse_money(budget.group(1)) if budget else None
-    return dict(product=product.title(), qty=max(1, int(qty.group(1))) if qty else 1,
+    return dict(product=product.title(), qty=max(1, int(qty.group(1))) if qty else None,
                 budget=money if money is None or math.isfinite(money) else None, reason=reason,
-                urgency=urgency, sentiment=sentiment, location=loc.group(1) if loc else None)
+                urgency=urgency, sentiment=sentiment, location=loc.group(1) if loc else None,
+                specifications=specifications, kind=request_kind(text))
 
 
 def llm_extract(text, source):
@@ -147,9 +185,11 @@ def llm_extract(text, source):
         import anthropic
         message = anthropic.Anthropic(timeout=20, max_retries=0).messages.create(
             model=os.environ.get("GHOST_MODEL", "claude-sonnet-5-5"), max_tokens=300,
-            system="Extract a lost-sale demand signal. Reply with JSON only: product (str), qty (int), "
-                   "budget (number|null), reason (out_of_stock|price_too_high|not_stocked|quote_rejected|"
-                   "lead_time|abandoned), urgency (1-3), sentiment (negative|neutral|positive), location (str|null).",
+            system="Extract a lost-sale demand signal. Reply with JSON only: product (str), specifications (str|null), "
+                   "kind (product|service), qty (int|null), budget (number|null), reason (out_of_stock|price_too_high|"
+                   "not_stocked|unsupported_service|quote_rejected|lead_time|abandoned|unknown), urgency (1-3), "
+                   "sentiment (negative|neutral|positive), location (str|null). Use null for quantity or budget when "
+                   "the customer did not state them. Use unknown when the unsuccessful outcome is not explicit.",
             messages=[{"role": "user", "content": f"Source: {source}\nText: {text}"}])
         payload = json.loads(re.sub(r"```json|```", "", message.content[0].text).strip())
         return payload if isinstance(payload, dict) else None
@@ -165,9 +205,13 @@ def validated_fields(candidate):
         value = candidate.get(key)
         if isinstance(value, str) and value.strip():
             clean[key] = value.strip()[:250]
-    for key, allowed in (("reason", REASON_LABELS), ("sentiment", ("negative", "neutral", "positive"))):
+    for key, allowed in (("reason", REASON_LABELS), ("sentiment", ("negative", "neutral", "positive")),
+                         ("kind", KINDS)):
         if candidate.get(key) in allowed:
             clean[key] = candidate[key]
+    specs = candidate.get("specifications")
+    if isinstance(specs, str) and specs.strip():
+        clean["specifications"] = specs.strip()[:250]
     if type(candidate.get("qty")) is int and 1 <= candidate["qty"] <= 1_000_000_000:
         clean["qty"] = candidate["qty"]
     if type(candidate.get("urgency")) is int and candidate["urgency"] in (1, 2, 3):
@@ -257,14 +301,15 @@ def draft_signal(text, source, currency):
 def apply_fields(signal, fields):
     if not isinstance(fields, dict):
         raise ValueError("'fields' must be a JSON object.")
-    allowed = {"product", "qty", "budget", "reason", "urgency", "sentiment", "location", "currency"}
+    allowed = {"product", "qty", "budget", "reason", "urgency", "sentiment", "location", "currency",
+               "specifications", "kind"}
     if set(fields) - allowed:
         raise ValueError("Unsupported editable signal field.")
     cleaned = validated_fields(fields)
     if "currency" in fields and fields["currency"] in CURRENCIES:
         cleaned["currency"] = fields["currency"]
     for key, value in fields.items():
-        if value is None and key in ("budget", "location"):
+        if value is None and key in ("budget", "location", "qty", "specifications"):
             cleaned[key] = None
         elif key not in cleaned:
             raise ValueError(f"Invalid value for '{key}'.")
@@ -306,6 +351,8 @@ def save_signal(text, source="chatbot", customer=None, *, commit=True, currency=
         signal, _ = draft_signal(text, source, currency)
     if fields is not None:
         apply_fields(signal, fields)
+    signal.setdefault("kind", "product")
+    signal.setdefault("specifications", None)
     if event:
         signal["reason_engine"] = "channel_event"
     if type(verified) is not bool:
@@ -315,7 +362,7 @@ def save_signal(text, source="chatbot", customer=None, *, commit=True, currency=
     signal["reviewed_at"] = now if verified else None
     columns = ("product", "qty", "budget", "reason", "urgency", "sentiment", "location",
                "reason_engine", "ml_reason", "ml_confidence", "model_version", "currency",
-               "reviewed_reason", "reviewed_at")
+               "reviewed_reason", "reviewed_at", "specifications", "kind")
     cursor = connection.execute(
         "INSERT OR IGNORE INTO signals(ts,source,raw,pkey,customer,external_id," + ",".join(columns) + ")"
         " VALUES(" + ",".join("?" for _ in range(6 + len(columns))) + ")",
@@ -372,12 +419,40 @@ def landing():
     return render_template("landing.html")
 
 
+@app.get("/present")
+def presentation():
+    from presentation_data import notebook_evaluation
+    return render_template("presentation.html", config=dict(
+        reasons={key: REASON_NAMES[key] for key in REASON_LABELS},
+        sources=SOURCE_NAMES, defaultCurrency=DEFAULT_CURRENCY,
+        today=datetime.now(BUSINESS_TIMEZONE).date().isoformat(),
+        evaluation=notebook_evaluation(ROOT),
+        notebookAvailable=(ROOT/'notebooks'/'GhostDemand_Training_Improved.ipynb').is_file(),
+    ))
+
+
+@app.get("/present/notebook")
+def presentation_notebook():
+    path = ROOT/'notebooks'/'GhostDemand_Training_Improved.ipynb'
+    if not path.is_file():
+        return jsonify(error="The training notebook is unavailable in this checkout."), 404
+    return send_file(path, as_attachment=True, download_name=path.name)
+
+
+@app.get("/present/notes")
+def presentation_notes():
+    path = ROOT/'PANEL_PRESENTATION.md'
+    if not path.is_file():
+        return jsonify(error="The presentation notes are unavailable in this checkout."), 404
+    return send_file(path, as_attachment=True, download_name='GhostDemand_Panel_Notes.md')
+
+
 @app.get("/dashboard")
 @app.get("/demo")
 def index():
     return render_template("index.html", demo=request.path == "/demo", config=dict(
         sources=SOURCE_NAMES, reasons=REASON_NAMES, statuses=STATUSES, currencies=CURRENCIES,
-        defaultCurrency=DEFAULT_CURRENCY, demo=request.path == "/demo"))
+        kinds=KINDS, defaultCurrency=DEFAULT_CURRENCY, demo=request.path == "/demo"))
 
 
 @app.post("/api/signals")
@@ -498,7 +573,7 @@ def get_follow_ups():
 
 @app.get("/api/opportunities/evidence")
 def opportunity_evidence():
-    rows = [row for row in selected_rows() if row["pkey"] == request.args.get("key")]
+    rows = [row for row in attach_groups(selected_rows()) if row.get("gkey") == request.args.get("key")]
     if not rows:
         return jsonify(error="This opportunity has no evidence in the current view."), 404
     summary = summarize(rows)["demand"][0]
@@ -519,7 +594,8 @@ def update_signal(signal_id):
     if current is None:
         return jsonify(error="Signal not found."), 404
     values = dict(current)
-    editable = {k: v for k, v in payload.items() if k in ("product", "qty", "budget", "urgency", "location")}
+    editable = {k: v for k, v in payload.items() if k in ("product", "qty", "budget", "urgency", "location",
+                                                          "specifications", "kind")}
     apply_fields(values, editable)
     if "reason" in payload:
         if payload["reason"] not in REASON_LABELS:
@@ -560,48 +636,266 @@ def update_signal(signal_id):
     values["pkey"] = normalize(values["product"])
     values["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="microseconds")
     keys = ("product", "pkey", "qty", "budget", "urgency", "location", "currency", "reviewed_reason", "reviewed_at",
-            "status", "owner", "next_action", "follow_up_on", "recovered_amount", "recovered_currency", "updated_at")
+            "specifications", "kind", "status", "owner", "next_action", "follow_up_on", "recovered_amount",
+            "recovered_currency", "updated_at")
     db().execute("UPDATE signals SET " + ",".join(f"{key}=?" for key in keys) + " WHERE id=?", (*(values[k] for k in keys), signal_id))
     db().commit()
     return jsonify(enrich_signal(values))
+
+
+def import_items_from_upload(filename, content):
+    name = (filename or "").casefold()
+    fingerprint = hashlib.sha256(content.encode()).hexdigest()[:24]
+    if name.endswith(".txt") or name.endswith(".text"):
+        items = []
+        for index, enquiry in enumerate(parse_conversation(content), 1):
+            items.append(dict(text=enquiry["text"], source="salesperson", customer=enquiry.get("customer"),
+                              external_id=f"chat-{fingerprint}-{index}"))
+        return items, []
+    try:
+        reader = csv.DictReader(io.StringIO(content), strict=True)
+        if not reader.fieldnames or "text" not in reader.fieldnames:
+            raise ValueError("The CSV needs a 'text' column. Optional: source, customer, currency, external_id.")
+        rows = list(reader)
+    except csv.Error as exc:
+        raise ValueError("Use a valid UTF-8 CSV or a .txt conversation export.") from exc
+    items, errors = [], []
+    for index, row in enumerate(rows, 2):
+        item = {key: value for key, value in row.items() if key in ("text", "source", "customer", "currency", "external_id") and value}
+        item.setdefault("external_id", f"csv-{fingerprint}-{index}")
+        items.append((index, item))
+    previews, failed = [], errors
+    for index, item in items:
+        try:
+            previews.append(item)
+        except ValueError as exc:
+            failed.append(dict(row=index, error=str(exc)))
+    return [item for _, item in items], []
 
 
 @app.post("/api/import/preview")
 def preview_import():
     upload = request.files.get("file")
     if upload is None:
-        raise ValueError("Choose a CSV file with a 'text' column.")
+        raise ValueError("Choose a CSV or a .txt conversation record.")
     try:
         content = upload.read().decode("utf-8-sig")
-        reader = csv.DictReader(io.StringIO(content), strict=True)
-        if not reader.fieldnames or "text" not in reader.fieldnames:
-            raise ValueError("The CSV needs a 'text' column. Optional: source, customer, currency, external_id.")
-        rows = list(reader)
-    except (UnicodeDecodeError, csv.Error) as exc:
-        raise ValueError("Use a valid UTF-8 CSV file.") from exc
-    if not 1 <= len(rows) <= 100:
+    except UnicodeDecodeError as exc:
+        raise ValueError("Use a valid UTF-8 CSV or conversation text file.") from exc
+    try:
+        items, parse_errors = import_items_from_upload(upload.filename, content)
+    except ValueError:
+        raise
+    drafts, errors = [], list(parse_errors)
+    if not items:
+        raise ValueError("No customer enquiries were found in that file.")
+    if len(items) > 100:
         raise ValueError("Import 1 to 100 requests at a time.")
-    drafts, errors = [], []
-    fingerprint = hashlib.sha256(content.encode()).hexdigest()[:24]
-    for index, row in enumerate(rows, 2):
-        item = {key: value for key, value in row.items() if key in ("text", "source", "customer", "currency", "external_id") and value}
-        item.setdefault("external_id", f"csv-{fingerprint}-{index}")
+    # CSV row one is the header; report the row a person sees in their file.
+    first_row = 2 if (upload.filename or '').casefold().endswith('.csv') else 1
+    for index, item in enumerate(items, first_row):
         try:
             drafts.append(build_preview(item))
         except ValueError as exc:
             errors.append(dict(row=index, error=str(exc)))
-    return jsonify(drafts=drafts, errors=errors, total=len(rows))
+    return jsonify(drafts=drafts, errors=errors, total=len(drafts) + len(errors))
 
 
 @app.get("/api/signals/export")
 def export_signals():
-    fields = ("id", "ts", "source", "product", "qty", "budget", "currency", "effective_reason", "customer", "status", "owner", "recovered_amount", "recovered_currency", "raw")
+    fields = ("id", "ts", "source", "product", "specifications", "kind", "qty", "budget", "currency", "effective_reason",
+              "customer", "status", "owner", "recovered_amount", "recovered_currency", "raw")
     stream = io.StringIO()
     writer = csv.writer(stream)
     writer.writerow(fields)
     for row in selected_rows():
         writer.writerow([("'" + row.get(k)) if isinstance(row.get(k), str) and row[k].startswith(("=", "+", "-", "@")) else row.get(k) for k in fields])
     return Response(stream.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=ghostdemand-signals.csv"})
+
+
+
+# ---------- PesaShield AI (M-Pesa fraud detection) ----------
+FRAUD_SECRET = os.environ.get("PESASHIELD_SECRET", "dev-pesashield-secret").encode()
+
+SCAM_RULES = [
+    (r"m-?pesa.*pin|pin.*m-?pesa", "pin_request", "Asking for M-Pesa PIN/OTP"),
+    (r"send.*pin|confirm.*pin|verify.*pin", "pin_request", "Asking for PIN/verification"),
+    (r"reversal.*send|send.*money.*reverse|reverse.*pin", "fake_reversal", "Fake reversal request"),
+    (r"won|congratulations.*kes|prize.*claim", "prize_scam", "Prize/lottery scam"),
+    (r"fuliza.*suspend|account.*block|blocked.*call", "impersonation", "Account suspension impersonation"),
+    (r"till.*\d{5,}|paybill.*\d{5,}.*send", "payment_redirection", "Payment redirection request"),
+    (r"http[s]?://\S+", "suspicious_link", "Contains external link"),
+]
+
+
+def _hash_phone(value):
+    if not value:
+        return None
+    return hmac.new(FRAUD_SECRET, str(value).strip().lower().encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _hash_text(value):
+    if not value:
+        return None
+    return hashlib.sha256(str(value).strip().lower().encode()).hexdigest()
+
+
+def _rule_scan_sms(text):
+    low = (text or "").lower()
+    codes = []
+    details = []
+    for pattern, code, desc in SCAM_RULES:
+        if re.search(pattern, low):
+            codes.append(code)
+            details.append(desc)
+    score = min(0.95, 0.3 + 0.15 * len(set(codes)))
+    return list(set(codes)), details, score
+
+
+@app.get("/api/pesashield/status")
+def pesashield_status():
+    if not PESASHIELD_ENABLED:
+        return jsonify(enabled=False)
+    return jsonify(enabled=True, model=active_fraud_model().status(), labels=SCAM_LABELS)
+
+
+@app.post("/api/pesashield/sms/check")
+def pesashield_sms_check():
+    if not PESASHIELD_ENABLED:
+        raise ValueError("PesaShield is disabled.")
+    payload = request.get_json() or {}
+    text = (payload.get("text") or "").strip()
+    if not text or len(text) > 10000:
+        raise ValueError("Provide SMS text between 1 and 10000 characters.")
+    sender = payload.get("sender")
+    channel = payload.get("channel") or "sms"
+    rule_codes, rule_details, rule_score = _rule_scan_sms(text)
+    prediction = active_fraud_model().predict(text)
+    urls = re.findall(r"http[s]?://\S+", text)
+    amounts = re.findall(r"kes\s*[\d,]+|\b[\d,]+\s*kes\b|\$\s*[\d,]+", text, re.I)
+    mpesa_refs = re.findall(r"\b[A-Z0-9]{10,12}\b", text)
+    verdict = "legit"
+    confidence = rule_score
+    reason_engine = "rules"
+    model_version = None
+    if prediction:
+        verdict = prediction["verdict"]
+        confidence = max(confidence, prediction["confidence"])
+        reason_engine = "local_ml"
+        model_version = prediction.get("model_version")
+    if rule_codes and verdict == "legit":
+        verdict = "suspicious"
+    if "pin_request" in rule_codes or "fake_reversal" in rule_codes:
+        verdict = "scam"
+        confidence = max(confidence, 0.85)
+    advice = []
+    if verdict == "scam":
+        advice = ["Do not share your M-Pesa PIN or OTP.", "Do not send money to reverse a transaction.", "Do not click suspicious links.", "Report to Safaricom 100/234 or your service provider."]
+    elif verdict == "suspicious":
+        advice = ["Be cautious. Verify directly with the sender/business via official channels.", "Never share PINs/OTPs.", "Report if it asks for money or personal details."]
+    else:
+        advice = ["No obvious scam indicators found. Stay vigilant."]
+    body_hash = _hash_text(text)
+    sender_hash = _hash_phone(sender) if sender else None
+    connection = db()
+    try:
+        with connection:
+            connection.execute("""INSERT INTO fraud_messages(ts,channel,sender_hash,body_hash,body,urls_json,amounts_json,mpesa_refs_json,
+                risk_score,verdict,reason_codes_json,model_version,ml_confidence,reason_engine)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (datetime.now(timezone.utc).isoformat(timespec="microseconds"), channel, sender_hash, body_hash,
+                 text[:5000], json.dumps(urls), json.dumps(amounts), json.dumps(mpesa_refs),
+                 confidence, verdict, json.dumps(rule_codes), model_version, prediction["confidence"] if prediction else None, reason_engine))
+            mid = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
+    except Exception:
+        # dedup
+        row = connection.execute("SELECT id,verdict,risk_score,reason_codes_json FROM fraud_messages WHERE body_hash=? AND channel=? AND ifnull(sender_hash,'')=ifnull(?, '') ORDER BY id DESC LIMIT 1",
+                                 (body_hash, channel, sender_hash)).fetchone()
+        if row:
+            return jsonify(id=row["id"], deduplicated=True, verdict=row["verdict"], risk_score=row["risk_score"],
+                           reason_codes=json.loads(row["reason_codes_json"] or "[]"), rule_details=rule_details,
+                           advice=advice, confidence=confidence, reason_engine=reason_engine, model_version=model_version, urls=urls)
+        raise
+    return jsonify(id=mid, deduplicated=False, verdict=verdict, risk_score=round(confidence, 4),
+                   reason_codes=rule_codes, rule_details=rule_details, advice=advice, confidence=round(confidence, 4),
+                   reason_engine=reason_engine, model_version=model_version, urls=urls)
+
+
+@app.get("/api/pesashield/reports")
+def pesashield_reports():
+    if not PESASHIELD_ENABLED:
+        raise ValueError("PesaShield is disabled.")
+    rows = [dict(r) for r in db().execute("SELECT id,ts,channel,sender_hash,body,urls_json,amounts_json,mpesa_refs_json,risk_score,verdict,reason_codes_json,model_version,ml_confidence,reason_engine,reviewed_verdict,reviewed_at,status FROM fraud_messages ORDER BY ts DESC, id DESC LIMIT 200")]
+    for r in rows:
+        r["urls"] = json.loads(r["urls_json"] or "[]")
+        r["amounts"] = json.loads(r["amounts_json"] or "[]")
+        r["mpesa_refs"] = json.loads(r["mpesa_refs_json"] or "[]")
+        r["reason_codes"] = json.loads(r["reason_codes_json"] or "[]")
+        r["body_preview"] = (r["body"] or "")[:200]
+    return jsonify(items=rows)
+
+
+@app.patch("/api/pesashield/reports/<int:report_id>/review")
+def pesashield_review(report_id):
+    if not PESASHIELD_ENABLED:
+        raise ValueError("PesaShield is disabled.")
+    payload = request.get_json() or {}
+    verdict = payload.get("verdict")
+    if verdict not in SCAM_LABELS:
+        raise ValueError("Choose scam, suspicious, or legit.")
+    cursor = db().execute("UPDATE fraud_messages SET reviewed_verdict=?, reviewed_at=? WHERE id=?", (verdict, datetime.now(timezone.utc).isoformat(timespec="microseconds"), report_id))
+    if cursor.rowcount == 0:
+        return jsonify(error="Report not found."), 404
+    db().commit()
+    return jsonify(id=report_id, reviewed_verdict=verdict)
+
+
+@app.get("/api/pesashield/model")
+def pesashield_model():
+    if not PESASHIELD_ENABLED:
+        raise ValueError("PesaShield is disabled.")
+    return jsonify(active_fraud_model().status())
+
+
+@app.post("/api/pesashield/model/train")
+def pesashield_train():
+    if not PESASHIELD_ENABLED:
+        raise ValueError("PesaShield is disabled.")
+    data = []
+    try:
+        starter = json.loads(FRAUD_STARTER_PATH.read_text()) if FRAUD_STARTER_PATH.exists() else []
+    except Exception:
+        starter = []
+    for s in starter:
+        if isinstance(s, dict) and s.get("text") and s.get("label") in SCAM_LABELS:
+            data.append(dict(text=s["text"], label=s["label"]))
+    for row in db().execute("SELECT body, reviewed_verdict FROM fraud_messages WHERE reviewed_verdict IS NOT NULL"):
+        if row["body"] and row["reviewed_verdict"] in SCAM_LABELS:
+            data.append(dict(text=row["body"], label=row["reviewed_verdict"]))
+    try:
+        meta = active_fraud_model().train(data)
+    except FraudTrainingError as e:
+        return jsonify(error=str(e)), 409
+    except Exception as e:
+        return jsonify(error=str(e)), 503
+    return jsonify(model_status=active_fraud_model().status(), metadata=meta)
+
+
+@app.get("/api/pesashield/insights")
+def pesashield_insights():
+    if not PESASHIELD_ENABLED:
+        raise ValueError("PesaShield is disabled.")
+    db_conn = db()
+    total = db_conn.execute("SELECT COUNT(*) as c FROM fraud_messages").fetchone()["c"]
+    scam = db_conn.execute("SELECT COUNT(*) as c FROM fraud_messages WHERE verdict='scam'").fetchone()["c"]
+    suspicious = db_conn.execute("SELECT COUNT(*) as c FROM fraud_messages WHERE verdict='suspicious'").fetchone()["c"]
+    reviewed = db_conn.execute("SELECT COUNT(*) as c FROM fraud_messages WHERE reviewed_verdict IS NOT NULL").fetchone()["c"]
+    recent = [dict(r) for r in db_conn.execute("SELECT id,ts,verdict,risk_score,reason_codes_json FROM fraud_messages ORDER BY ts DESC LIMIT 10")]
+    for r in recent:
+        r["reason_codes"] = json.loads(r["reason_codes_json"] or "[]")
+    return jsonify(kpis=dict(total=total, scam=scam, suspicious=suspicious, reviewed=reviewed),
+                   recent=recent, labels=SCAM_LABELS)
+
 
 
 @app.get("/api/catalog")

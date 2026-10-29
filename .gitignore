@@ -5,3 +5,6 @@ __pycache__/
 *.db
 *.db-*
 models/
+ml_workflow/work/
+.venv-ml/
+ghostdemand_training_output/

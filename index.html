@@ -24,6 +24,7 @@
   <a href="#followups" data-nav="followups"><span aria-hidden="true">↗</span>Follow-up queue</a>
   <a href="#catalog" data-nav="catalog"><span aria-hidden="true">▦</span>Product aliases</a>
   <a href="#connections" data-nav="connections"><span aria-hidden="true">⌁</span>Channels & import</a>
+    <a href="#pesashield" data-nav="pesashield"><span aria-hidden="true">🛡</span>PesaShield AI</a>
  </nav>
  <div class="sidebar-bottom">
     <div class="tiny-label">THE IDEA</div>
@@ -37,6 +38,7 @@
   <div class="breadcrumb">Retail intelligence <span>/</span>
      <b id="page-label">Opportunities</b></div>
      <div class="top-actions">
+      {% if demo %}<a class="button small" href="/present">Panel walkthrough ↗</a>{% endif %}
       <span class="workspace-indicator" id="workspace-status" role="status">Loading workspace…</span>
       <a class="button small primary" href="#capture">＋ Capture request</a>
   </div>
@@ -241,7 +243,13 @@
 </div>
  </section>
  <section id="page-followups" class="page" hidden>
-  <div class="page-heading"><div><p class="eyebrow">TURN CUSTOMER INTEREST INTO A NEXT STEP</p><h1>Follow-up queue</h1><p class="lead">Give each request an owner, plan the next contact, and track the outcome.</p></div><a class="button" href="#capture">＋ Add a request</a></div>
+  <div class="page-heading"><div><p class="eyebrow">TURN CUSTOMER INTEREST INTO A NEXT STEP</p>
+    <h1>Follow-up queue</h1>
+    <p class="lead">Give each request an owner, plan the next contact, and track the outcome.</p>
+  </div>
+  <a class="button" href="#capture">＋ Add a request</a>
+</div>
+
   <div class="metrics" id="followups-metrics" aria-live="polite"></div>
   <div class="followup-toolbar">
     <div class="followup-tabs" role="group" aria-label="Follow-up status">
@@ -254,57 +262,366 @@
     <p class="muted" id="followups-count" role="status"></p>
   </div>
   <div class="filterbar followup-filters">
-    <div><label for="followups-search">Find a product, customer or next step</label><input id="followups-search" type="search" maxlength="150" placeholder="Search follow-ups…"></div>
-    <div><label for="followups-owner">Owner</label><select id="followups-owner"><option value="">All owners</option><option value="unassigned">Unassigned</option></select></div>
-    <div><label for="followups-urgency">Urgency</label><select id="followups-urgency"><option value="all">All requests</option><option value="urgent">Urgent only</option></select></div>
-    <div><label for="followups-due">Follow-up date</label><select id="followups-due"><option value="all">Any date</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="unscheduled">Not scheduled</option></select></div>
+    <div>
+      <label for="followups-search">Find a product, customer or next step</label>
+      <input id="followups-search" type="search" maxlength="150" placeholder="Search follow-ups…"></div>
+    <div>
+      <label for="followups-owner">Owner</label>
+      <select id="followups-owner">
+        <option value="">All owners</option>
+        <option value="unassigned">Unassigned</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="followups-urgency">Urgency</label>
+      <select id="followups-urgency">
+        <option value="all">All requests</option>
+        <option value="urgent">Urgent only</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="followups-due">Follow-up date</label>
+      <select id="followups-due">
+        <option value="all">Any date</option>
+        <option value="overdue">Overdue</option>
+        <option value="today">Due today</option>
+        <option value="unscheduled">Not scheduled</option>
+      </select>
+    </div>
+
   </div>
   <p id="followups-error" class="error-banner" role="alert" hidden></p>
-  <div id="followups-list" class="followup-grid" aria-live="polite"><div class="empty-card">Loading follow-ups…</div></div>
-  <div class="pagination followup-pagination"><button class="button small" id="followups-previous">← Previous</button><span id="followups-page"></span><button class="button small" id="followups-next">Next →</button></div>
+  <div id="followups-list" class="followup-grid" aria-live="polite">
+    <div class="empty-card">Loading follow-ups…</div>
+  </div>
+  <div class="pagination followup-pagination">
+    <button class="button small" id="followups-previous">← Previous</button>
+    <span id="followups-page"></span>
+    <button class="button small" id="followups-next">Next →</button>
+  </div>
+
   <p class="footnote">Overdue requests appear first, followed by urgency and follow-up date. This queue tracks work for your team; it does not send customer messages.</p>
  </section>
  <section id="page-catalog" class="page" hidden>
-  <div class="page-heading"><div><p class="eyebrow">DIFFERENT WORDS. THE SAME PRODUCT.</p><h1>Product aliases</h1><p class="lead">Connect customer wording to your product names. Keep sizes, specifications and variants separate.</p></div></div>
-  <div class="capture-layout"><div class="card"><h2>Add a product & its aliases</h2><p class="muted">For example, “wireless earphones” and “Bluetooth earbuds” may refer to the same product in your store. You decide the mapping.</p><form id="catalog-form"><label for="catalog-name">Canonical product name / exact variant</label><input id="catalog-name" required maxlength="200" placeholder="Wireless Earbuds"><label for="catalog-sku">SKU <span class="muted">(optional)</span></label><input id="catalog-sku" maxlength="80" placeholder="AUD-101"><label for="catalog-aliases">Other names customers use <span class="muted">(one per line)</span></label><textarea id="catalog-aliases" rows="4" placeholder="bluetooth earbuds&#10;wireless earphones"></textarea><button class="button primary" type="submit">Save product mapping</button></form><p class="footnote">Matching historical product names are regrouped using your mapping. Original customer messages are preserved. This is a naming catalog, not a live inventory connection.</p></div><div class="card"><div class="section-heading"><h2>Your product mappings</h2><span id="catalog-count" class="muted"></span></div><div id="catalog-list"></div></div></div>
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">DIFFERENT WORDS. THE SAME PRODUCT.</p>
+      <h1>Product aliases</h1>
+      <p class="lead">Connect customer wording to your product names. Keep sizes, specifications and variants separate.</p>
+    </div>
+  </div>
+
+  <div class="capture-layout">
+    <div class="card">
+      <h2>Add a product & its aliases</h2>
+      <p class="muted">For example, “wireless earphones” and “Bluetooth earbuds” may refer to the same product in your store. You decide the mapping.</p>
+      <form id="catalog-form">
+        <label for="catalog-name">Canonical product name / exact variant</label>
+        <input id="catalog-name" required maxlength="200" placeholder="Wireless Earbuds">
+        <label for="catalog-sku">SKU <span class="muted">(optional)</span>
+        </label>
+        <input id="catalog-sku" maxlength="80" placeholder="AUD-101">
+        <label for="catalog-aliases">Other names customers use <span class="muted">(one per line)</span>
+        </label>
+        <textarea id="catalog-aliases" rows="4" placeholder="bluetooth earbuds&#10;wireless earphones"></textarea>
+        <button class="button primary" type="submit">Save product mapping</button>
+      </form>
+      <p class="footnote">Matching historical product names are regrouped using your mapping. Original customer messages are preserved. This is a naming catalog, not a live inventory connection.</p>
+    </div>
+    <div class="card">
+      <div class="section-heading">
+        <h2>Your product mappings</h2>
+        <span id="catalog-count" class="muted"></span>
+      </div>
+      <div id="catalog-list">
+        <div class="empty-card">Loading product aliases…</div>
+      </div>
+    </div>
+  </div>
  </section>
  <section id="page-connections" class="page" hidden>
-  <div class="page-heading"><div><p class="eyebrow">START SMALL. CAPTURE FROM ANYWHERE.</p><h1>Channels & import</h1><p class="lead">Paste requests today, import a CSV, or connect your store using the available API receivers.</p></div></div>
-  <div class="connection-grid"><div class="card"><span class="tag green">Ready to use</span><h2>Conversations & sales notes</h2><p>Paste WhatsApp messages, chatbot transcripts, unaccepted quotations or abandoned enquiries. Dictate a sales note when your browser supports it.</p><a href="#capture" class="text-link">Capture a request →</a></div><div class="card"><span class="tag amber">Receiver available · setup required</span><h2>WhatsApp</h2><p>A Twilio-style form receiver accepts Body, From and MessageSid. No WhatsApp account is connected by default.</p><details><summary>Integration endpoint</summary><code>POST /webhook/whatsapp</code><p class="footnote">Configure the provider and add webhook signature validation before public deployment.</p></details></div><div class="card"><span class="tag amber">API available · setup required</span><h2>Website searches & stockouts</h2><p>Capture searches with zero results and explicit stockout requests. Pass an event ID so retries are counted once.</p><details><summary>Payload examples</summary><pre>POST /api/events/website-search
-{"query":"wireless earbuds",
- "results_count":0,
- "event_id":"search-123"}
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">START SMALL. CAPTURE FROM ANYWHERE.</p>
+      <h1>Channels & import</h1>
+      <p class="lead">Paste requests today, import a CSV, or connect your store using the available API receivers.</p>
+    </div>
+  </div>
+  <div class="connection-grid">
+    <div class="card">
+      <span class="tag green">Ready to use</span>
+      <h2>Conversations & sales notes</h2>
+      <p>Paste WhatsApp messages, chatbot transcripts, unaccepted quotations or abandoned enquiries. Dictate a sales note when your browser supports it.</p>
+      <a href="#capture" class="text-link">Capture a request →</a>
+    </div>
+    <div class="card">
+      <span class="tag amber">Receiver available · setup required</span>
+      <h2>WhatsApp</h2>
+      <p>A Twilio-style form receiver accepts Body, From and MessageSid. No WhatsApp account is connected by default.</p>
+      <details>
+        <summary>Integration endpoint</summary>
+        <code>POST /webhook/whatsapp</code>
+        <p class="footnote">Configure the provider and add webhook signature validation before public deployment.</p>
+      </details>
+    </div>
+    <div class="card">
+      <span class="tag amber">API available · setup required</span>
+      <h2>Website searches & stockouts</h2>
+      <p>Capture searches with zero results and explicit stockout requests. Pass an event ID so retries are counted once.</p>
+      <details>
+        <summary>Payload examples</summary>
+        <pre>POST /api/events/website-search
+            {"query":"wireless earbuds",
+            "results_count":0,
+            "event_id":"search-123"}
 
-POST /api/events/stockout
-{"product":"Wireless Earbuds",
- "qty":2,"event_id":"stock-123"}</pre></details></div><div class="card"><span class="tag amber">API available · setup required</span><h2>Chatbots, quotes & other channels</h2><p>Use the signal API with the right channel and a stable external ID. Conversation history stays available as evidence.</p><details><summary>Signal API example</summary><pre>POST /api/signals
-{"text":"Need 2 wireless earbuds",
- "source":"chatbot",
- "external_id":"chat-123"}</pre><p class="footnote">These are working receivers, not pre-connected vendor accounts.</p></details></div></div>
-  <div class="card import-card"><div class="section-heading"><div><h2>Import a CSV of missed requests</h2><p class="muted">Up to 100 rows. Required: text. Optional: source, customer, currency, external_id.</p></div><button class="button small" id="csv-template">Download example CSV</button></div><form id="import-form"><label for="import-file">Choose a UTF-8 CSV</label><input id="import-file" type="file" accept=".csv,text/csv" required><button class="button" id="preview-import" type="submit">Preview import</button></form><div id="import-preview" hidden></div><p class="footnote">Preview does not save anything. Reimporting the same file uses stable IDs to avoid counting retries twice. Imported labels stay unreviewed until your team checks them.</p></div>
+            POST /api/events/stockout
+            {"product":"Wireless Earbuds",
+            "qty":2,"event_id":"stock-123"}</pre>
+          </details>
+        </div>
+        <div class="card">
+          <span class="tag amber">API available · setup required</span>
+          <h2>Chatbots, quotes & other channels</h2>
+          <p>Use the signal API with the right channel and a stable external ID. Conversation history stays available as evidence.</p>
+          <details>
+            <summary>Signal API example</summary>
+            <pre>POST /api/signals
+            {"text":"Need 2 wireless earbuds",
+            "source":"chatbot",
+            "external_id":"chat-123"}</pre>
+            <p class="footnote">These are working receivers, not pre-connected vendor accounts.</p>
+          </details>
+        </div>
+      </div>
+  <div class="card import-card">
+    <div class="section-heading">
+      <div>
+        <h2>Import a CSV of missed requests</h2>
+        <p class="muted">Up to 100 rows. Required: text. Optional: source, customer, currency, external_id.</p>
+      </div>
+      <button class="button small" id="csv-template">Download example CSV</button>
+    </div>
+    <form id="import-form">
+      <label for="import-file">Choose a UTF-8 CSV</label>
+      <input id="import-file" type="file" accept=".csv,text/csv" required>
+      <button class="button" id="preview-import" type="submit">Preview import</button>
+    </form><div id="import-preview" hidden>
+
+    </div>
+    <p class="footnote">Preview does not save anything. Reimporting the same file uses stable IDs to avoid counting retries twice. Imported labels stay unreviewed until your team checks them.</p>
+  </div>
+ </section>
+ <section id="page-pesashield" class="page" hidden>
+  <div class="page-heading">
+    <div>
+      <p class="eyebrow">PESASHIELD AI</p>
+      <h1>Mobile Money Fraud Detection</h1>
+      <p class="lead">Detect and prevent M-Pesa fraud. Check SMS messages for scam indicators and track reports.</p>
+    </div>
+  </div>
+  <div class="metrics" id="fraud-metrics">
+    <div class="metric"><span>Total Reports</span><b id="fraud-total">—</b></div>
+    <div class="metric"><span>Scam</span><b id="fraud-scam">—</b></div>
+    <div class="metric"><span>Suspicious</span><b id="fraud-suspicious">—</b></div>
+    <div class="metric"><span>Reviewed</span><b id="fraud-reviewed">—</b></div>
+  </div>
+  <div class="overview-layout">
+    <div>
+      <div class="card">
+        <div class="card-kicker">SMS CHECKER</div>
+        <h2>Check an M-Pesa SMS for fraud</h2>
+        <form id="fraud-check-form">
+          <label for="fraud-sms-text">Paste SMS message</label>
+          <textarea id="fraud-sms-text" rows="4" maxlength="10000" placeholder="e.g. M-PESA: ... or paste the message you received" required></textarea>
+          <label for="fraud-sender">Sender (optional)</label>
+          <input id="fraud-sender" placeholder="e.g. 0700000000 or short code">
+          <button class="button primary" type="submit">Check for fraud</button>
+        </form>
+        <div id="fraud-result" class="soft-card" style="margin-top:16px; display:none;"></div>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="section-heading">
+          <div><h2>Fraud reports</h2><p class="muted">Recent reports</p></div>
+          <button class="button small" id="fraud-refresh">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Time</th><th>Verdict</th><th>Risk</th><th>Reason codes</th><th>Preview</th><th>Action</th></tr></thead>
+            <tbody id="fraud-rows"><tr><td colspan="6">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <aside class="insight-rail">
+      <div class="card">
+        <div class="card-kicker">RED FLAGS</div>
+        <h2>Common M-Pesa scams</h2>
+        <ul class="muted">
+          <li>Asking for PIN/OTP</li>
+          <li>Fake reversal messages</li>
+          <li>Prize/lottery scams</li>
+          <li>Account suspension threats</li>
+          <li>Payment redirection to personal numbers</li>
+        </ul>
+        <p class="footnote">Report: Safaricom 100 or 234. Never share your PIN.</p>
+      </div>
+      <div class="card">
+        <div class="card-kicker">MODEL</div>
+        <h2>Fraud classifier</h2>
+        <div id="fraud-model-status">Loading...</div>
+        <button class="button small" id="fraud-train" style="margin-top:8px;">Train model</button>
+        <p class="footnote">Uses reviewed reports + starter data. Review→train loop.</p>
+      </div>
+    </aside>
+  </div>
  </section>
  <footer>GhostDemand AI <span>·</span> Turn unanswered demand into informed action.</footer>
  </main>
+
 </div>
-<dialog id="evidence-dialog"><div class="dialog-header"><div><p class="eyebrow">EVIDENCE BEFORE ACTION</p><h2 id="evidence-title"></h2></div><button class="icon-button" data-close="evidence-dialog" aria-label="Close evidence">×</button></div><div id="evidence-content"></div></dialog>
-<dialog id="signal-dialog"><div class="dialog-header"><div><p class="eyebrow">REVIEW & FOLLOW UP</p><h2>Customer request</h2></div><button class="icon-button" data-close="signal-dialog" aria-label="Close request">×</button></div><div id="signal-evidence"></div><form id="signal-form"><input type="hidden" id="edit-id"><label for="edit-product">Product / exact variant</label><input id="edit-product" maxlength="200" required><div class="field-row"><div><label for="edit-qty">Quantity</label><input id="edit-qty" type="number" min="1" max="1000000000" step="1" required></div><div><label for="edit-budget">Total stated budget</label><input id="edit-budget" type="number" min="0" step="any"></div><div><label for="edit-currency">Currency</label><select id="edit-currency">{% for code in config.currencies %}<option>{{code}}</option>{% endfor %}</select></div></div><label for="edit-reason">Verified blocker <span class="muted">(check against the request)</span></label><select id="edit-reason">{% for key,label in config.reasons.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select><div class="field-row"><div><label for="edit-urgency">Urgency</label><select id="edit-urgency"><option value="1">Low</option><option value="2">Medium</option><option value="3">High</option></select></div><div><label for="edit-status">Follow-up status</label><select id="edit-status">{% for key,label in config.statuses.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select></div></div><label for="edit-follow-up-on">Next follow-up date <span class="muted">(optional)</span></label><input id="edit-follow-up-on" type="date"><label for="edit-owner">Owner <span class="muted">(optional)</span></label><input id="edit-owner" maxlength="100" placeholder="Who will follow up?"><label for="edit-action">Next action / outcome note</label><textarea id="edit-action" rows="2" maxlength="600" placeholder="e.g. Check restock date and call back if contact was agreed"></textarea><div id="recovery-fields" class="soft-card inset" hidden><p class="footnote">Record a completed recovery confirmed by your team. This does not send a message or verify a payment.</p><div class="field-row"><div><label for="edit-recovered">Recovered value <span class="muted">(optional)</span></label><input id="edit-recovered" type="number" min="0" step="any"></div><div><label for="edit-recovered-currency">Recovery currency</label><select id="edit-recovered-currency">{% for code in config.currencies %}<option>{{code}}</option>{% endfor %}</select></div></div></div><div class="button-row"><button class="button primary" type="submit" id="save-review">Save review & next step</button><button type="button" class="button" data-close="signal-dialog">Cancel</button></div><p id="review-error" class="error-text" role="alert"></p></form></dialog>
+<dialog id="evidence-dialog">
+  <div class="dialog-header">
+    <div>
+      <p class="eyebrow">EVIDENCE BEFORE ACTION</p>
+      <h2 id="evidence-title">
+
+      </h2>
+    </div>
+    <button class="icon-button" data-close="evidence-dialog" aria-label="Close evidence">×</button>
+  </div>
+  <div id="evidence-content">
+
+  </div>
+</dialog>
+<dialog id="signal-dialog">
+  <div class="dialog-header">
+    <div>
+      <p class="eyebrow">REVIEW & FOLLOW UP</p>
+      <h2>Customer request</h2>
+    </div>
+    <button class="icon-button" data-close="signal-dialog" aria-label="Close request">×</button>
+  </div>
+  <div id="signal-evidence">
+
+  </div>
+  <form id="signal-form">
+    <input type="hidden" id="edit-id">
+    <label for="edit-product">Product / exact variant</label>
+    <input id="edit-product" maxlength="200" required>
+    <div class="field-row">
+      <div>
+        <label for="edit-qty">Quantity</label>
+        <input id="edit-qty" type="number" min="1" max="1000000000" step="1" required>
+      </div>
+      <div>
+        <label for="edit-budget">Total stated budget</label>
+        <input id="edit-budget" type="number" min="0" step="any">
+      </div>
+      <div>
+        <label for="edit-currency">Currency</label>
+        <select id="edit-currency">{% for code in config.currencies %}<option>{{code}}</option>{% endfor %}</select>
+      </div>
+    </div>
+    <label for="edit-reason">Verified blocker <span class="muted">(check against the request)</span>
+    </label>
+    <select id="edit-reason">{% for key,label in config.reasons.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select>
+    <div class="field-row">
+      <div>
+        <label for="edit-urgency">Urgency</label>
+        <select id="edit-urgency">
+          <option value="1">Low</option>
+          <option value="2">Medium</option>
+          <option value="3">High</option>
+        </select>
+      </div>
+      <div>
+        <label for="edit-status">Follow-up status</label>
+        <select id="edit-status">{% for key,label in config.statuses.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select>
+      </div>
+    </div>
+    <label for="edit-follow-up-on">Next follow-up date <span class="muted">(optional)</span>
+    </label>
+    <input id="edit-follow-up-on" type="date">
+    <label for="edit-owner">Owner <span class="muted">(optional)</span>
+    </label>
+    <input id="edit-owner" maxlength="100" placeholder="Who will follow up?">
+    <label for="edit-action">Next action / outcome note</label>
+    <textarea id="edit-action" rows="2" maxlength="600" placeholder="e.g. Check restock date and call back if contact was agreed"></textarea>
+    <div id="recovery-fields" class="soft-card inset" hidden>
+      <p class="footnote">Record a completed recovery confirmed by your team. This does not send a message or verify a payment.</p>
+      <div class="field-row">
+        <div>
+          <label for="edit-recovered">Recovered value <span class="muted">(optional)</span>
+          </label>
+          <input id="edit-recovered" type="number" min="0" step="any"></div>
+          <div>
+            <label for="edit-recovered-currency">Recovery currency</label>
+            <select id="edit-recovered-currency">{% for code in config.currencies %}<option>{{code}}</option>{% endfor %}</select>
+          </div>
+        </div>
+      </div>
+      <div class="button-row">
+        <button class="button primary" type="submit" id="save-review">Save review & next step</button>
+        <button type="button" class="button" data-close="signal-dialog">Cancel</button>
+      </div>
+      <p id="review-error" class="error-text" role="alert"></p>
+    </form>
+  </dialog>
 <dialog id="followup-dialog" aria-labelledby="followup-dialog-title">
-  <div class="dialog-header"><div><p class="eyebrow">PLAN THE WORK. RECORD THE OUTCOME.</p><h2 id="followup-dialog-title">Manage follow-up</h2></div><button class="icon-button" data-close="followup-dialog" aria-label="Close follow-up">×</button></div>
+  <div class="dialog-header">
+    <div>
+      <p class="eyebrow">PLAN THE WORK. RECORD THE OUTCOME.</p>
+      <h2 id="followup-dialog-title">Manage follow-up</h2>
+    </div>
+    <button class="icon-button" data-close="followup-dialog" aria-label="Close follow-up">×</button>
+  </div>
   <div id="followup-context"></div>
   <form id="followup-form">
     <input id="followup-id" type="hidden">
-    <div class="field-row"><div><label for="followup-owner">Owner <span class="muted">(optional)</span></label><input id="followup-owner" maxlength="100" placeholder="Who will take the next step?"></div><div><label for="followup-status">Status</label><select id="followup-status">{% for key,label in config.statuses.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select></div></div>
-    <label for="followup-date">Next follow-up date <span class="muted">(optional)</span></label><input id="followup-date" type="date">
-    <label for="followup-action">Next step or outcome note</label><textarea id="followup-action" maxlength="600" rows="3" placeholder="e.g. Confirm the restock date, then arrange collection with the customer."></textarea>
+    <div class="field-row">
+      <div>
+        <label for="followup-owner">Owner <span class="muted">(optional)</span></label>
+        <input id="followup-owner" maxlength="100" placeholder="Who will take the next step?">
+      </div>
+      <div>
+
+        <label for="followup-status">Status</label>
+        <select id="followup-status">{% for key,label in config.statuses.items() %}<option value="{{key}}">{{label}}</option>{% endfor %}</select>
+      </div>
+    </div>
+
+    <label for="followup-date">Next follow-up date <span class="muted">(optional)</span>
+    </label>
+    <input id="followup-date" type="date">
+    <label for="followup-action">Next step or outcome note</label>
+    <textarea id="followup-action" maxlength="600" rows="3" placeholder="e.g. Confirm the restock date, then arrange collection with the customer."></textarea>
     <div id="followup-recovery-fields" class="soft-card inset" hidden>
       <p class="footnote">Record a completed sale confirmed by your team. This does not verify a payment.</p>
-      <div class="field-row"><div><label for="followup-recovered">Recovered value <span class="muted">(optional)</span></label><input id="followup-recovered" type="number" min="0" max="1000000000000000" step="any"></div><div><label for="followup-recovery-currency">Currency</label><select id="followup-recovery-currency">{% for code in config.currencies %}<option>{{code}}</option>{% endfor %}</select></div></div>
+      <div class="field-row">
+        <div>
+          <label for="followup-recovered">Recovered value <span class="muted">(optional)</span>
+          </label>
+          <input id="followup-recovered" type="number" min="0" max="1000000000000000" step="any"></div>
+          <div>
+            <label for="followup-recovery-currency">Currency</label>
+            <select id="followup-recovery-currency">{% for code in config.currencies %}<option>{{code}}</option>{% endfor %}</select>
+          </div>
+        </div>
     </div>
-    <div class="button-row"><button class="button primary" id="save-followup" type="submit">Save follow-up</button><button class="button" type="button" data-close="followup-dialog">Cancel</button></div>
+
+    <div class="button-row">
+      <button class="button primary" id="save-followup" type="submit">Save follow-up</button>
+      <button class="button" type="button" data-close="followup-dialog">Cancel</button>
+    </div>
+
     <p class="error-text" id="followup-save-error" role="alert"></p>
   </form>
 </dialog>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <script type="application/json" id="app-config">{{ config|tojson }}</script>
 <script src="{{ url_for('static',filename='app.js') }}" defer></script>
-</body></html>
+</body>
+</html>

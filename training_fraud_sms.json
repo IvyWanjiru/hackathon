@@ -1,0 +1,13 @@
+[
+  {"text": "M-PESA: You have received KES 5000 from JOHN. To reverse send your PIN to 0700000000", "label": "scam"},
+  {"text": "CONGRATULATIONS! You won KES 100000. Send MPESA PIN to claim prize", "label": "scam"},
+  {"text": "Safaricom: Your M-PESA account will be blocked. Call 0701234567 to verify", "label": "scam"},
+  {"text": "Send KES 200 to till number 123456 to receive your loan approval now", "label": "scam"},
+  {"text": "Your Fuliza limit has been suspended. Send M-Pesa details to this number to reactivate", "label": "scam"},
+  {"text": "M-PESA reversal required. Confirm your PIN via this link to get money back", "label": "scam"},
+  {"text": "Hello, can you send me KES 500 via M-Pesa to help me clear fare, I will pay back", "label": "suspicious"},
+  {"text": "Someone asking for your M-Pesa PIN or OTP code is a scam", "label": "legit"},
+  {"text": "I need to buy airtime and send money to paybill 888880 for water bill", "label": "legit"},
+  {"text": "Confirm you received the money from your customer via M-Pesa", "label": "legit"},
+  {"text": "PAYBILL: Send money to 400200 Account 12345 for rent payment", "label": "legit"}
+]

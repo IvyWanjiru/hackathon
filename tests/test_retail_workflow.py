@@ -110,7 +110,8 @@ class RetailWorkflowTests(unittest.TestCase):
         group = self.client.get('/api/insights').get_json()['demand'][0]
         self.assertEqual(group['count'],2)
         self.assertEqual(group['customers'],1)
-        self.assertEqual(group['suggested_action'],'Validate a new product opportunity')
+        # Availability questions do not establish that the retailer lacks stock.
+        self.assertEqual(group['suggested_action'],'Ask what blocked the request')
         self.client.post('/api/catalog',json=dict(name='Running Shoes',aliases=['trainers']))
         preview = self.client.post('/api/signals/preview',json=dict(text='Need trainers size 42')).get_json()
         self.assertTrue(any('variant' in w or 'specification' in w for w in preview['warnings']))
@@ -149,6 +150,7 @@ class RetailWorkflowTests(unittest.TestCase):
         data=response.get_json()
         self.assertEqual(len(data['drafts']),2)
         self.assertEqual(data['errors'][0]['row'],4)
+        self.assertEqual(data['total'],3)
         self.assertEqual(self.client.get('/api/insights').get_json()['kpis']['signals'],0)
         items=[{k:v for k,v in d.items() if k not in ('fields','warnings')} for d in data['drafts']]
         first=self.client.post('/api/signals/bulk',json={'items':items})
@@ -167,7 +169,8 @@ class RetailWorkflowTests(unittest.TestCase):
         page=self.client.get('/api/signals?page=2').get_json()
         self.assertEqual(len(page['items']),2)
         self.assertEqual(page['total'],17)
-        evidence=self.client.get('/api/opportunities/evidence?key=wireless+earbuds').get_json()
+        group=self.client.get('/api/insights').get_json()['demand'][0]
+        evidence=self.client.get('/api/opportunities/evidence',query_string={'key':group['key']}).get_json()
         self.assertEqual(len(evidence['items']),17)
         self.assertEqual(evidence['summary']['customers'],17)
         self.assertEqual(self.client.get('/api/signals?source=chatbot').get_json()['total'],0)

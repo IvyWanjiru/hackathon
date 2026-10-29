@@ -1,0 +1,110 @@
+{
+  "candidates": [
+    {
+      "analyzer": "word",
+      "validation_recall_at_1": 0.875
+    },
+    {
+      "analyzer": "char_wb",
+      "validation_recall_at_1": 0.875
+    }
+  ],
+  "test": {
+    "queries": 8,
+    "recall_at_1": 1.0,
+    "recall_at_3": 1.0,
+    "mrr": 1.0,
+    "predictions": [
+      {
+        "query_id": "Q17",
+        "expected": [
+          "P01"
+        ],
+        "top3": [
+          "P01",
+          "P02",
+          "P03"
+        ]
+      },
+      {
+        "query_id": "Q18",
+        "expected": [
+          "P02"
+        ],
+        "top3": [
+          "P02",
+          "P01",
+          "P03"
+        ]
+      },
+      {
+        "query_id": "Q19",
+        "expected": [
+          "P03"
+        ],
+        "top3": [
+          "P03",
+          "P04",
+          "P01"
+        ]
+      },
+      {
+        "query_id": "Q20",
+        "expected": [
+          "P04"
+        ],
+        "top3": [
+          "P04",
+          "P03",
+          "P01"
+        ]
+      },
+      {
+        "query_id": "Q21",
+        "expected": [
+          "P05"
+        ],
+        "top3": [
+          "P05",
+          "P06",
+          "P01"
+        ]
+      },
+      {
+        "query_id": "Q22",
+        "expected": [
+          "P06"
+        ],
+        "top3": [
+          "P06",
+          "P05",
+          "P01"
+        ]
+      },
+      {
+        "query_id": "Q23",
+        "expected": [
+          "P07"
+        ],
+        "top3": [
+          "P07",
+          "P08",
+          "P05"
+        ]
+      },
+      {
+        "query_id": "Q24",
+        "expected": [
+          "P08"
+        ],
+        "top3": [
+          "P08",
+          "P07",
+          "P05"
+        ]
+      }
+    ]
+  },
+  "catalog_products": 8,
+  "warning": "Synthetic/local relevance exercise. Review variants. Similarity is not a probability or stock status."
+}

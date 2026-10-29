@@ -1,0 +1,209 @@
+{
+  "algorithm": "character TF-IDF + logistic regression",
+  "selected": {
+    "C": 0.5,
+    "threshold": 1.0
+  },
+  "candidates": [
+    {
+      "C": 0.5,
+      "validation_macro_f1": 0.7777777777777777
+    },
+    {
+      "C": 2.0,
+      "validation_macro_f1": 0.7095238095238096
+    },
+    {
+      "C": 8.0,
+      "validation_macro_f1": 0.7037518037518037
+    }
+  ],
+  "validation_threshold_curve": [
+    {
+      "threshold": 0.35,
+      "accepted": 0,
+      "coverage": 0.0,
+      "accepted_accuracy": null
+    },
+    {
+      "threshold": 0.45,
+      "accepted": 0,
+      "coverage": 0.0,
+      "accepted_accuracy": null
+    },
+    {
+      "threshold": 0.55,
+      "accepted": 0,
+      "coverage": 0.0,
+      "accepted_accuracy": null
+    },
+    {
+      "threshold": 0.65,
+      "accepted": 0,
+      "coverage": 0.0,
+      "accepted_accuracy": null
+    },
+    {
+      "threshold": 0.75,
+      "accepted": 0,
+      "coverage": 0.0,
+      "accepted_accuracy": null
+    },
+    {
+      "threshold": 0.85,
+      "accepted": 0,
+      "coverage": 0.0,
+      "accepted_accuracy": null
+    },
+    {
+      "threshold": 0.95,
+      "accepted": 0,
+      "coverage": 0.0,
+      "accepted_accuracy": null
+    }
+  ],
+  "test": {
+    "examples": 21,
+    "accuracy": 0.8095238095238095,
+    "macro_f1": 0.8079365079365081,
+    "log_loss": 1.5846421309957663,
+    "prediction_missing": 0,
+    "per_class": {
+      "abandoned": {
+        "precision": 0.5,
+        "recall": 1.0,
+        "f1-score": 0.6666666666666666,
+        "support": 3.0
+      },
+      "lead_time": {
+        "precision": 1.0,
+        "recall": 0.75,
+        "f1-score": 0.8571428571428571,
+        "support": 4.0
+      },
+      "not_stocked": {
+        "precision": 1.0,
+        "recall": 0.75,
+        "f1-score": 0.8571428571428571,
+        "support": 4.0
+      },
+      "out_of_stock": {
+        "precision": 0.6666666666666666,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.6666666666666666,
+        "support": 3.0
+      },
+      "price_too_high": {
+        "precision": 1.0,
+        "recall": 0.6666666666666666,
+        "f1-score": 0.8,
+        "support": 3.0
+      },
+      "quote_rejected": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 4.0
+      },
+      "accuracy": 0.8095238095238095,
+      "macro avg": {
+        "precision": 0.861111111111111,
+        "recall": 0.8055555555555555,
+        "f1-score": 0.8079365079365078,
+        "support": 21.0
+      },
+      "weighted avg": {
+        "precision": 0.8809523809523809,
+        "recall": 0.8095238095238095,
+        "f1-score": 0.8217687074829934,
+        "support": 21.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        3,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        3,
+        1,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        2,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        4
+      ]
+    ],
+    "class_order": [
+      "abandoned",
+      "lead_time",
+      "not_stocked",
+      "out_of_stock",
+      "price_too_high",
+      "quote_rejected"
+    ],
+    "threshold": 1.0,
+    "accepted": 0,
+    "coverage": 0.0,
+    "accepted_accuracy": null,
+    "slices": {
+      "synthetic": {
+        "examples": 21,
+        "accuracy": 0.8095238095238095
+      },
+      "channel:synthetic": {
+        "examples": 21,
+        "accuracy": 0.8095238095238095
+      }
+    },
+    "warning": "Scores are uncalibrated. Synthetic/test-set performance does not establish production quality."
+  },
+  "dummy_majority_test_macro_f1": 0.041666666666666664,
+  "training_examples": 66,
+  "provenance": {
+    "created_at": "2026-10-28T15:28:24.162667+00:00",
+    "python": "3.14.8",
+    "scikit_learn": "1.9.1",
+    "sha256": {
+      "ml_workflow/work/splits/train.csv": "5ef7baf4835896b0897215b41535a7db719dfd1d4b24d7df59aacdafaee2a2f1",
+      "ml_workflow/work/splits/validation.csv": "59c34eb3fa157ef87ba61792eee0510f817d70841ba83d5d3eb31963f2a618ff",
+      "ml_workflow/work/splits/test.csv": "64b0d4d074486f298887358fab8d5b8a0ad56be74c2245ebc040e3f3df29782e"
+    },
+    "seed": 42
+  }
+}

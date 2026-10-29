@@ -50,6 +50,12 @@ reviewable demonstration of the complete loop.
 
 ## Three-minute demo
 
+For the panel, open **`/present`** for the guided six-chapter demo with live
+capture, evidence, follow-up, the ML explanation, keyboard navigation and an
+optional rehearsal timer. [Presenter script and Q&A](PANEL_PRESENTATION.md)
+explains the serving model and the separate notebook evaluation. The workspace
+walkthrough below remains useful for deeper questions.
+
 1. **0:00–0:30 — The problem.** "Sales reports show what people bought. Our next
    product decision also needs the requests we couldn't fulfil." Open `/demo` and
    click **Load retail demo**. State that all 24 requests and sample outcomes are

@@ -1,0 +1,17 @@
+{
+  "macro_f1": 0.8604497354497355,
+  "accuracy": 0.8571428571428571,
+  "threshold": 1.0,
+  "coverage": 0.0,
+  "examples": 108,
+  "split_sizes": {
+    "train": 66,
+    "validation": 21,
+    "test": 21
+  },
+  "synthetic": true,
+  "notebook_sha256": "a1771edfe0e1cbcba5d0a6c4e3a27269f45a49b9a14a150529d4050cbec90229",
+  "method": "Stratified group folds; vocabulary and weights fit on train only; validation selects settings; untouched test.",
+  "scope": "Separate notebook candidate; not the model currently serving the demo.",
+  "warning": "Synthetic practice results do not establish real-customer accuracy."
+}

@@ -1,0 +1,17 @@
+query_id,product_id,label,origin
+Q01,P01,1,synthetic_teaching_example
+Q01,P02,0,synthetic_teaching_example
+Q02,P02,1,synthetic_teaching_example
+Q02,P01,0,synthetic_teaching_example
+Q03,P03,1,synthetic_teaching_example
+Q03,P04,0,synthetic_teaching_example
+Q04,P04,1,synthetic_teaching_example
+Q04,P03,0,synthetic_teaching_example
+Q05,P05,1,synthetic_teaching_example
+Q05,P06,0,synthetic_teaching_example
+Q06,P06,1,synthetic_teaching_example
+Q06,P05,0,synthetic_teaching_example
+Q07,P07,1,synthetic_teaching_example
+Q07,P08,0,synthetic_teaching_example
+Q08,P08,1,synthetic_teaching_example
+Q08,P07,0,synthetic_teaching_example

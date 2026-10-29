@@ -1,0 +1,6 @@
+-r requirements.txt
+pandas>=2.2,<4
+pyarrow>=17,<30
+openpyxl>=3.1,<4
+catboost>=1.2,<2
+lightgbm>=4,<5

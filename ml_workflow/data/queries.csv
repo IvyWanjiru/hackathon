@@ -1,0 +1,25 @@
+query_id,query,relevant_ids,split,origin
+Q01,Bluetooth headphones with noise cancelling,P01,train,synthetic_teaching_example
+Q02,USB Type C wired headset,P02,train,synthetic_teaching_example
+Q03,10000mAh portable charger,P03,train,synthetic_teaching_example
+Q04,20000mAh portable charger,P04,train,synthetic_teaching_example
+Q05,medium navy cotton shirt,P05,train,synthetic_teaching_example
+Q06,large navy cotton shirt,P06,train,synthetic_teaching_example
+Q07,black trainers EU42,P07,train,synthetic_teaching_example
+Q08,black trainers EU43,P08,train,synthetic_teaching_example
+Q09,over ear wireless headphones,P01,validation,synthetic_teaching_example
+Q10,white USB-C earphones,P02,validation,synthetic_teaching_example
+Q11,power bank 10000mAh 20W,P03,validation,synthetic_teaching_example
+Q12,power bank 20000mAh 30W,P04,validation,synthetic_teaching_example
+Q13,navy T-shirt size M,P05,validation,synthetic_teaching_example
+Q14,navy T-shirt size L,P06,validation,synthetic_teaching_example
+Q15,running shoes size 42,P07,validation,synthetic_teaching_example
+Q16,running shoes size 43,P08,validation,synthetic_teaching_example
+Q17,noise cancelling Bluetooth headset black,P01,test,synthetic_teaching_example
+Q18,wired in ear USB-C headset white,P02,test,synthetic_teaching_example
+Q19,portable power bank 10000mAh,P03,test,synthetic_teaching_example
+Q20,portable power bank 20000mAh,P04,test,synthetic_teaching_example
+Q21,short sleeve navy cotton top medium,P05,test,synthetic_teaching_example
+Q22,short sleeve navy cotton top large,P06,test,synthetic_teaching_example
+Q23,lightweight black running trainers size 42,P07,test,synthetic_teaching_example
+Q24,lightweight black running trainers size 43,P08,test,synthetic_teaching_example
