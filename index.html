@@ -3,7 +3,11 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="GhostDemand turns missed customer requests into evidence for better stock, product and follow-up decisions.">
+<<<<<<< Updated upstream
 <title>Mteja-Insight · Demand beyond the sale</title>
+=======
+<title>Mteja Insight · Demand beyond the sale</title>
+>>>>>>> Stashed changes
 <link rel="stylesheet" href="{{ url_for('static',filename='styles.css') }}">
 </head>
 <body>
@@ -13,7 +17,11 @@
   <svg viewBox="0 0 40 44" aria-hidden="true">
     <path d="M5 37V19a15 15 0 0 1 30 0v18l-7-4-8 6-8-6z" fill="currentColor"/>
     <circle cx="15" cy="19" r="2" fill="#141b36"/><circle cx="25" cy="19" r="2" fill="#141b36"/></svg>
+<<<<<<< Updated upstream
     <span>Mteja-Insight<small>DEMAND BEYOND THE SALE</small></span></a>
+=======
+    <span>Mteja Insight<small>DEMAND BEYOND THE SALE</small></span></a>
+>>>>>>> Stashed changes
  <div class="workspace"><span class="workspace-icon">R</span>
   <div>Retail workspace<small>{{ 'Demo · synthetic data' if demo else 'Local workspace' }}</small></div></div>
  <nav aria-label="Main navigation">
@@ -381,60 +389,34 @@
  </section>
  <section id="page-pesashield" class="page" hidden>
   <div class="page-heading">
-    <div>
-      <p class="eyebrow">PESASHIELD AI</p>
-      <h1>Mobile Money Fraud Detection</h1>
-      <p class="lead">Detect and prevent M-Pesa fraud. Check SMS messages for scam indicators and track reports.</p>
-    </div>
+    <div><p class="eyebrow">PESASHIELD · M-PESA MESSAGE CHECK</p><h1>Check before you trust.</h1><p class="lead">Paste a message to inspect the receipt, spot fraud indicators and choose your next step.</p></div>
   </div>
-  <div class="metrics" id="fraud-metrics">
-    <div class="metric"><span>Total Reports</span><b id="fraud-total">—</b></div>
-    <div class="metric"><span>Scam</span><b id="fraud-scam">—</b></div>
-    <div class="metric"><span>Suspicious</span><b id="fraud-suspicious">—</b></div>
-    <div class="metric"><span>Reviewed</span><b id="fraud-reviewed">—</b></div>
-  </div>
-  <div class="overview-layout">
-    <div>
-      <div class="card">
-        <div class="card-kicker">SMS CHECKER</div>
-        <h2>Check an M-Pesa SMS for fraud</h2>
-        <form id="fraud-check-form">
-          <label for="fraud-sms-text">Paste SMS message</label>
-          <textarea id="fraud-sms-text" rows="4" maxlength="10000" placeholder="e.g. M-PESA: ... or paste the message you received" required></textarea>
-          <label for="fraud-sender">Sender (optional)</label>
-          <input id="fraud-sender" placeholder="e.g. 0700000000 or short code">
-          <button class="button primary" type="submit">Check for fraud</button>
-        </form>
-        <div id="fraud-result" class="soft-card" style="margin-top:16px; display:none;"></div>
-      </div>
-      <div class="card" style="margin-top:16px;">
-        <div class="section-heading">
-          <div><h2>Fraud reports</h2><p class="muted">Recent reports</p></div>
-          <button class="button small" id="fraud-refresh">Refresh</button>
+  <div class="pesa-layout">
+    <div class="card pesa-checker">
+      <div class="card-kicker">PASTE. CHECK. UNDERSTAND.</div>
+      <h2>Does this message look genuine?</h2>
+      <p class="pesa-intro">Check the wording and transaction details. A pasted message cannot confirm that money reached your account.</p>
+      <form id="fraud-check-form">
+        <label for="fraud-sms-text">M-Pesa message</label>
+        <textarea id="fraud-sms-text" rows="7" maxlength="10000" placeholder="Paste the complete message, including its transaction reference, amount, date and balance…" aria-describedby="fraud-input-help" required></textarea>
+        <p id="fraud-input-help" class="footnote">One message at a time. Remove any actual PIN or OTP before pasting.</p>
+        <div class="pesa-input-grid">
+          <div><label for="fraud-sender">Sender shown (optional)</label><input id="fraud-sender" maxlength="250" placeholder="e.g. M-PESA or a phone number" autocomplete="off"></div>
+          <div><label for="fraud-expected">Expected amount in KES (optional)</label><input id="fraud-expected" type="number" min="0.01" max="1000000000000" step="0.01" placeholder="e.g. 5000" inputmode="decimal"></div>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Time</th><th>Verdict</th><th>Risk</th><th>Reason codes</th><th>Preview</th><th>Action</th></tr></thead>
-            <tbody id="fraud-rows"><tr><td colspan="6">Loading...</td></tr></tbody>
-          </table>
-        </div>
-      </div>
+        <div class="pesa-form-actions"><button class="button primary" id="fraud-check-submit" type="submit">Analyse message →</button><button class="text-button" id="fraud-clear" type="button">Clear</button></div>
+      </form>
+      <div class="pesa-samples"><span>Try a synthetic example</span><button class="button small" type="button" data-fraud-sample="receipt">Receipt example</button><button class="button small" type="button" data-fraud-sample="scam">Scam example</button></div>
+      <p class="footnote">{% if demo %}Public demo checks are not saved. Use synthetic messages for your presentation.{% else %}Check history is saved only when you are signed in to a protected live workspace.{% endif %}</p>
+      <div id="fraud-result" class="pesa-result" role="status" aria-live="polite" aria-atomic="true" hidden></div>
     </div>
-    <aside class="insight-rail">
-      <div class="card">
-        <div class="card-kicker">RED FLAGS</div>
-        <h2>Common M-Pesa scams</h2>
-        <ul class="muted">
-          <li>Asking for PIN/OTP</li>
-          <li>Fake reversal messages</li>
-          <li>Prize/lottery scams</li>
-          <li>Account suspension threats</li>
-          <li>Payment redirection to personal numbers</li>
-        </ul>
-        <p class="footnote">Report: Safaricom 100 or 234. Never share your PIN.</p>
-      </div>
+    <aside class="pesa-rail">
+      <div class="card"><div class="card-kicker">WHAT THE RESULT MEANS</div><h2>Clear signals. Careful decisions.</h2><div class="pesa-key"><b class="pesa-red">High fraud risk</b><p>Strong indicators such as a PIN request, a fake reversal instruction or an upfront prize fee.</p><b class="pesa-amber">Suspicious</b><p>Details or instructions need an independent check before you act.</p><b class="pesa-green">Looks legitimate</b><p>The text follows a recognised receipt format, with no listed scam indicators. Payment is still unverified.</p><b>Unable to determine</b><p>The message is incomplete or does not contain enough evidence.</p></div></div>
+      <div class="card pesa-verification"><div class="card-kicker">VERIFY THE PAYMENT</div><h2>Your account is the source of truth.</h2><p>Open your usual M-PESA app or statement yourself. Compare the reference, amount and recipient before releasing goods or returning money.</p><a href="https://www.safaricom.co.ke/images/Downloads/Buy-goods-guides.pdf" target="_blank" rel="noopener noreferrer">Safaricom's verification guidance ↗</a></div>
     </aside>
   </div>
+  <div class="metrics pesa-metrics" id="fraud-metrics" hidden><div class="metric"><span>Saved checks</span><b id="fraud-total">0</b></div><div class="metric"><span>High fraud risk</span><b id="fraud-scam">0</b></div><div class="metric"><span>Looks legitimate</span><b id="fraud-legit">0</b></div><div class="metric"><span>Needs verification</span><b id="fraud-unverified">0</b></div></div>
+  <div class="card pesa-history"><div class="section-heading"><div><div class="card-kicker">WORKSPACE HISTORY</div><h2>Previous checks</h2></div><button class="button small" id="fraud-refresh" type="button">Refresh history</button></div><p id="fraud-history-note" class="footnote">Checking your workspace history…</p><div class="table-wrap" id="fraud-history-table" hidden><table><thead><tr><th>Checked</th><th>Assessment</th><th>Message</th><th>Team review</th></tr></thead><tbody id="fraud-rows"></tbody></table></div></div>
  </section>
  <footer>Mteja-Insight <span>·</span> Turn unanswered demand into informed action.</footer>
  </main>
@@ -581,5 +563,10 @@
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <script type="application/json" id="app-config">{{ config|tojson }}</script>
 <script src="{{ url_for('static',filename='app.js') }}" defer></script>
+
+<!-- Paste before </body> in index.html, landing.html and login.html -->
+<div style="height:64px"></div><!-- spacer so the fixed footer never covers content -->
+<footer style="position:fixed;left:0;right:0;bottom:0;z-index:999;padding:14px 24px;font:700 14px Inter,system-ui,sans-serif;color:#4f46e5;background:#f6f7fb;border-top:1px solid #e4e7f1;display:flex;flex-wrap:wrap;gap:6px 24px;justify-content:center;align-items:center;text-align:center">
+<span>© 2026 Mteja Insights</span><a href="/terms.html" style="color:#4f46e5;font-weight:700;text-decoration:none">Terms of service</a><a href="/privacy.html" style="color:#4f46e5;font-weight:700;text-decoration:none">Privacy policy</a><a href="/consent.html" style="color:#4f46e5;font-weight:700;text-decoration:none">Consent form</a><a href="mailto:mtejainsights@gmail.com" style="color:#4f46e5;font-weight:700;text-decoration:none">mtejainsights@gmail.com</a></footer>
 </body>
 </html>

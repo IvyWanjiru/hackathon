@@ -14,7 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import click
-from flask import Flask, Response, g, has_request_context, jsonify, redirect, render_template, request, send_file, session
+from flask import Flask, Response, g, has_request_context, jsonify, redirect, render_template, request, send_file, session, send_from_directory
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.exceptions import HTTPException
 from dotenv import load_dotenv
@@ -110,7 +110,14 @@ def db():
             extracted_till TEXT, extracted_account TEXT, risk_score REAL, verdict TEXT,
             reason_codes_json TEXT, model_version TEXT, ml_confidence REAL, reason_engine TEXT,
             reviewed_verdict TEXT, reviewed_at TEXT, reviewed_by TEXT, status TEXT DEFAULT 'open',
-            location_hint TEXT)""")
+            location_hint TEXT, analysis_json TEXT)""")
+        fraud_columns = {row[1] for row in g.db.execute("PRAGMA table_info(fraud_messages)")}
+        if "analysis_json" not in fraud_columns:
+            g.db.execute("BEGIN IMMEDIATE")
+            fraud_columns = {row[1] for row in g.db.execute("PRAGMA table_info(fraud_messages)")}
+            if "analysis_json" not in fraud_columns:
+                g.db.execute("ALTER TABLE fraud_messages ADD COLUMN analysis_json TEXT")
+            g.db.commit()
         g.db.execute("""CREATE TABLE IF NOT EXISTS fraud_transactions(
             id INTEGER PRIMARY KEY, ts TEXT, amount REAL, currency TEXT DEFAULT 'KES',
             sender_hash TEXT, recipient_hash TEXT, channel TEXT, device_hint TEXT, hour_of_day INTEGER,
@@ -475,12 +482,65 @@ def add_bulk():
     return jsonify(signals), 201
 
 
-@app.post("/webhook/whatsapp")
+@app.route("/webhook/whatsapp", methods=["GET", "POST"])
 def whatsapp():
-    body = request.values.get("Body", "").strip()
+    if request.method == "GET":
+        return "", 200
+    # Support form-encoded (Twilio) and JSON
+    body = ""
+    from_num = ""
+    msg_sid = None
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        body = (payload.get("Body") or payload.get("body") or payload.get("text") or "").strip()
+        from_num = payload.get("From") or payload.get("from") or payload.get("WaId") or ""
+        msg_sid = payload.get("MessageSid") or payload.get("SmsMessageSid") or payload.get("messageId")
+    else:
+        body = (request.values.get("Body") or request.values.get("body") or "").strip()
+        from_num = request.values.get("From") or request.values.get("from") or ""
+        msg_sid = request.values.get("MessageSid") or request.values.get("SmsMessageSid")
     if body:
-        save_signal(*prepare_signal(dict(text=body, source="whatsapp", customer=request.values.get("From"))),
-                    external_id=request.values.get("MessageSid") or request.values.get("SmsMessageSid"))
+        try:
+            save_signal(*prepare_signal(dict(text=body, source="whatsapp", customer=from_num or None)),
+                        external_id=msg_sid)
+        except Exception:
+            app.logger.exception("whatsapp webhook save failed")
+        # Also auto-scan for fraud
+        try:
+            rule_codes, rule_details, rule_score = _rule_scan_sms(body)
+            prediction = active_fraud_model().predict(body)
+            urls = re.findall(r"http[s]?://\S+", body)
+            amounts = re.findall(r"kes\s*[\d,]+|\b[\d,]+\s*kes\b|\$\s*[\d,]+", body, re.I)
+            mpesa_refs = re.findall(r"\b[A-Z0-9]{10,12}\b", body)
+            verdict = "legit"
+            confidence = rule_score
+            reason_engine = "rules"
+            model_version = None
+            if prediction:
+                verdict = prediction["verdict"]
+                confidence = max(confidence, prediction["confidence"])
+                reason_engine = "local_ml"
+                model_version = prediction.get("model_version")
+            if rule_codes and verdict == "legit":
+                verdict = "suspicious"
+            if "pin_request" in rule_codes or "fake_reversal" in rule_codes:
+                verdict = "scam"
+                confidence = max(confidence, 0.85)
+            body_hash = _hash_text(body)
+            sender_hash = _hash_phone(from_num) if from_num else None
+            connection = db()
+            try:
+                with connection:
+                    connection.execute("""INSERT INTO fraud_messages(ts,channel,sender_hash,body_hash,body,urls_json,amounts_json,mpesa_refs_json,
+                        risk_score,verdict,reason_codes_json,model_version,ml_confidence,reason_engine)
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (datetime.now(timezone.utc).isoformat(timespec="microseconds"), "whatsapp", sender_hash, body_hash,
+                         body[:5000], json.dumps(urls), json.dumps(amounts), json.dumps(mpesa_refs),
+                         confidence, verdict, json.dumps(rule_codes), model_version, prediction["confidence"] if prediction else None, reason_engine))
+            except Exception:
+                pass
+        except Exception:
+            app.logger.exception("whatsapp fraud scan failed")
     return "", 204
 
 
@@ -725,6 +785,14 @@ def export_signals():
 # ---------- PesaShield AI (M-Pesa fraud detection) ----------
 FRAUD_SECRET = os.environ.get("PESASHIELD_SECRET", "dev-pesashield-secret").encode()
 
+from pesashield import ANALYSIS_VERSION, analyse_message, expected_amount, normalized_text
+from workspace_auth import privacy_ready
+
+
+def private_fraud_history():
+    return not is_demo() and privacy_ready() and bool(session.get('workspace_authenticated'))
+
+
 SCAM_RULES = [
     (r"m-?pesa.*pin|pin.*m-?pesa", "pin_request", "Asking for M-Pesa PIN/OTP"),
     (r"send.*pin|confirm.*pin|verify.*pin", "pin_request", "Asking for PIN/verification"),
@@ -734,18 +802,6 @@ SCAM_RULES = [
     (r"till.*\d{5,}|paybill.*\d{5,}.*send", "payment_redirection", "Payment redirection request"),
     (r"http[s]?://\S+", "suspicious_link", "Contains external link"),
 ]
-
-
-def _hash_phone(value):
-    if not value:
-        return None
-    return hmac.new(FRAUD_SECRET, str(value).strip().lower().encode(), hashlib.sha256).hexdigest()[:32]
-
-
-def _hash_text(value):
-    if not value:
-        return None
-    return hashlib.sha256(str(value).strip().lower().encode()).hexdigest()
 
 
 def _rule_scan_sms(text):
@@ -760,6 +816,18 @@ def _rule_scan_sms(text):
     return list(set(codes)), details, score
 
 
+def _hash_phone(value):
+    if not value:
+        return None
+    return hmac.new(FRAUD_SECRET, str(value).strip().lower().encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def _hash_text(value):
+    if not value:
+        return None
+    return hashlib.sha256(str(value).strip().lower().encode()).hexdigest()
+
+
 @app.get("/api/pesashield/status")
 def pesashield_status():
     if not PESASHIELD_ENABLED:
@@ -771,82 +839,76 @@ def pesashield_status():
 def pesashield_sms_check():
     if not PESASHIELD_ENABLED:
         raise ValueError("PesaShield is disabled.")
-    payload = request.get_json() or {}
-    text = (payload.get("text") or "").strip()
-    if not text or len(text) > 10000:
-        raise ValueError("Provide SMS text between 1 and 10000 characters.")
+    payload = request.get_json()
+    if not isinstance(payload, dict):
+        raise ValueError("Send one message as a JSON object.")
+    text = payload.get("text")
+    if not isinstance(text, str) or not text.strip() or len(text) > 10000:
+        raise ValueError("Paste a message between 1 and 10,000 characters.")
+    text = normalized_text(text)
+    if not text:
+        raise ValueError("Paste a readable M-PESA message.")
     sender = payload.get("sender")
-    channel = payload.get("channel") or "sms"
-    rule_codes, rule_details, rule_score = _rule_scan_sms(text)
+    if sender is not None and (not isinstance(sender, str) or len(sender) > 250):
+        raise ValueError("Sender must be text of up to 250 characters.")
+    channel = payload.get("channel", "sms")
+    if channel not in ("sms", "whatsapp", "email", "manual"):
+        raise ValueError("Choose sms, whatsapp, email or manual.")
+    expected = expected_amount(payload.get("expected_amount"))
     prediction = active_fraud_model().predict(text)
-    urls = re.findall(r"http[s]?://\S+", text)
-    amounts = re.findall(r"kes\s*[\d,]+|\b[\d,]+\s*kes\b|\$\s*[\d,]+", text, re.I)
-    mpesa_refs = re.findall(r"\b[A-Z0-9]{10,12}\b", text)
-    verdict = "legit"
-    confidence = rule_score
-    reason_engine = "rules"
-    model_version = None
-    if prediction:
-        verdict = prediction["verdict"]
-        confidence = max(confidence, prediction["confidence"])
-        reason_engine = "local_ml"
-        model_version = prediction.get("model_version")
-    if rule_codes and verdict == "legit":
-        verdict = "suspicious"
-    if "pin_request" in rule_codes or "fake_reversal" in rule_codes:
-        verdict = "scam"
-        confidence = max(confidence, 0.85)
-    advice = []
-    if verdict == "scam":
-        advice = ["Do not share your M-Pesa PIN or OTP.", "Do not send money to reverse a transaction.", "Do not click suspicious links.", "Report to Safaricom 100/234 or your service provider."]
-    elif verdict == "suspicious":
-        advice = ["Be cautious. Verify directly with the sender/business via official channels.", "Never share PINs/OTPs.", "Report if it asks for money or personal details."]
-    else:
-        advice = ["No obvious scam indicators found. Stay vigilant."]
-    body_hash = _hash_text(text)
-    sender_hash = _hash_phone(sender) if sender else None
+    analysis = analyse_message(text, prediction=prediction, expected=expected)
+    # Public demonstrations can check text without retaining financial messages.
+    if not private_fraud_history():
+        return jsonify(id=None, saved=False, deduplicated=False, **analysis)
+    # Different comparison amounts are separate checks; identical retries count once.
+    fingerprint = json.dumps([ANALYSIS_VERSION, " ".join(text.casefold().split()), expected])
+    body_hash = _hash_text(fingerprint)
+    sender_hash = _hash_phone(sender)
     connection = db()
-    try:
-        with connection:
-            connection.execute("""INSERT INTO fraud_messages(ts,channel,sender_hash,body_hash,body,urls_json,amounts_json,mpesa_refs_json,
-                risk_score,verdict,reason_codes_json,model_version,ml_confidence,reason_engine)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (datetime.now(timezone.utc).isoformat(timespec="microseconds"), channel, sender_hash, body_hash,
-                 text[:5000], json.dumps(urls), json.dumps(amounts), json.dumps(mpesa_refs),
-                 confidence, verdict, json.dumps(rule_codes), model_version, prediction["confidence"] if prediction else None, reason_engine))
-            mid = connection.execute("SELECT last_insert_rowid()").fetchone()[0]
-    except Exception:
-        # dedup
-        row = connection.execute("SELECT id,verdict,risk_score,reason_codes_json FROM fraud_messages WHERE body_hash=? AND channel=? AND ifnull(sender_hash,'')=ifnull(?, '') ORDER BY id DESC LIMIT 1",
+    with connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute("SELECT id,analysis_json FROM fraud_messages WHERE body_hash=? AND channel=? AND ifnull(sender_hash,'')=ifnull(?, '') ORDER BY id DESC LIMIT 1",
                                  (body_hash, channel, sender_hash)).fetchone()
-        if row:
-            return jsonify(id=row["id"], deduplicated=True, verdict=row["verdict"], risk_score=row["risk_score"],
-                           reason_codes=json.loads(row["reason_codes_json"] or "[]"), rule_details=rule_details,
-                           advice=advice, confidence=confidence, reason_engine=reason_engine, model_version=model_version, urls=urls)
-        raise
-    return jsonify(id=mid, deduplicated=False, verdict=verdict, risk_score=round(confidence, 4),
-                   reason_codes=rule_codes, rule_details=rule_details, advice=advice, confidence=round(confidence, 4),
-                   reason_engine=reason_engine, model_version=model_version, urls=urls)
+        if row and row['analysis_json']:
+            return jsonify(id=row['id'], saved=True, deduplicated=True, **json.loads(row['analysis_json']))
+        cursor = connection.execute("""INSERT INTO fraud_messages(ts,channel,sender_hash,body_hash,body,urls_json,amounts_json,mpesa_refs_json,
+            risk_score,verdict,reason_codes_json,model_version,ml_confidence,reason_engine,analysis_json)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (datetime.now(timezone.utc).isoformat(timespec="microseconds"), channel, sender_hash, body_hash,
+             text, json.dumps(analysis['urls']), json.dumps(analysis['amounts']), json.dumps(analysis['mpesa_refs']),
+             None, analysis['verdict'], json.dumps(analysis['reason_codes']),
+             prediction.get('model_version') if prediction else None, prediction.get('confidence') if prediction else None,
+             analysis['reason_engine'], json.dumps(analysis)))
+        mid = cursor.lastrowid
+    return jsonify(id=mid, saved=True, deduplicated=False, **analysis)
 
 
 @app.get("/api/pesashield/reports")
 def pesashield_reports():
     if not PESASHIELD_ENABLED:
         raise ValueError("PesaShield is disabled.")
-    rows = [dict(r) for r in db().execute("SELECT id,ts,channel,sender_hash,body,urls_json,amounts_json,mpesa_refs_json,risk_score,verdict,reason_codes_json,model_version,ml_confidence,reason_engine,reviewed_verdict,reviewed_at,status FROM fraud_messages ORDER BY ts DESC, id DESC LIMIT 200")]
+    if not private_fraud_history():
+        return jsonify(items=[], history_available=False)
+    rows = [dict(r) for r in db().execute("SELECT id,ts,channel,sender_hash,body,urls_json,amounts_json,mpesa_refs_json,risk_score,verdict,reason_codes_json,model_version,ml_confidence,reason_engine,reviewed_verdict,reviewed_at,status,analysis_json FROM fraud_messages ORDER BY ts DESC, id DESC LIMIT 200")]
     for r in rows:
+        saved = json.loads(r.pop("analysis_json") or "{}")
+        r["assessment_label"] = saved.get("verdict_label", "Older assessment - recheck")
+        r["risk_level"] = saved.get("risk_level", "unknown")
+        r["reason_titles"] = saved.get("rule_details", [])
         r["urls"] = json.loads(r["urls_json"] or "[]")
         r["amounts"] = json.loads(r["amounts_json"] or "[]")
         r["mpesa_refs"] = json.loads(r["mpesa_refs_json"] or "[]")
         r["reason_codes"] = json.loads(r["reason_codes_json"] or "[]")
         r["body_preview"] = (r["body"] or "")[:200]
-    return jsonify(items=rows)
+    return jsonify(items=rows, history_available=True)
 
 
 @app.patch("/api/pesashield/reports/<int:report_id>/review")
 def pesashield_review(report_id):
     if not PESASHIELD_ENABLED:
         raise ValueError("PesaShield is disabled.")
+    if not private_fraud_history():
+        return jsonify(error='Sign in to a private live workspace to review saved checks.'), 403
     payload = request.get_json() or {}
     verdict = payload.get("verdict")
     if verdict not in SCAM_LABELS:
@@ -893,6 +955,9 @@ def pesashield_train():
 def pesashield_insights():
     if not PESASHIELD_ENABLED:
         raise ValueError("PesaShield is disabled.")
+    if not private_fraud_history():
+        return jsonify(kpis=dict(total=0, scam=0, suspicious=0, legit=0, unknown=0, unverified=0, reviewed=0),
+                       recent=[], labels=SCAM_LABELS, history_available=False)
     db_conn = db()
     total = db_conn.execute("SELECT COUNT(*) as c FROM fraud_messages").fetchone()["c"]
     scam = db_conn.execute("SELECT COUNT(*) as c FROM fraud_messages WHERE verdict='scam'").fetchone()["c"]
@@ -901,7 +966,9 @@ def pesashield_insights():
     recent = [dict(r) for r in db_conn.execute("SELECT id,ts,verdict,risk_score,reason_codes_json FROM fraud_messages ORDER BY ts DESC LIMIT 10")]
     for r in recent:
         r["reason_codes"] = json.loads(r["reason_codes_json"] or "[]")
-    return jsonify(kpis=dict(total=total, scam=scam, suspicious=suspicious, reviewed=reviewed),
+    legit = db_conn.execute("SELECT COUNT(*) FROM fraud_messages WHERE verdict='legit'").fetchone()[0]
+    unknown = db_conn.execute("SELECT COUNT(*) FROM fraud_messages WHERE verdict='unknown'").fetchone()[0]
+    return jsonify(kpis=dict(total=total, scam=scam, suspicious=suspicious, legit=legit, unknown=unknown, unverified=suspicious+unknown, reviewed=reviewed),
                    recent=recent, labels=SCAM_LABELS)
 
 
@@ -997,6 +1064,27 @@ def bootstrap_models():
         if classifier.enabled and not classifier.path.exists():
             classifier.train([])
 
+
+from flask import send_from_directory, request, jsonify
+
+
+@app.route("/terms.html")
+def terms():   return send_from_directory("static", "terms.html")
+
+
+@app.route("/privacy.html")
+def privacy(): return send_from_directory("static", "privacy.html")
+
+
+@app.route("/consent.html")
+def consent(): return send_from_directory("static", "consent.html")
+
+
+@app.route("/api/consent", methods=["POST"])  # optional: store consent records for proof
+def record_consent():
+    data = request.get_json(silent=True) or {}
+    # TODO: save data + request.remote_addr + user agent to your DB
+    return jsonify(ok=True)
 
 from intake import register_intake
 receive_intake = register_intake(app, db=db, save_signal=save_signal, is_demo=is_demo, default_currency=DEFAULT_CURRENCY)

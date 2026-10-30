@@ -79,6 +79,7 @@ function route() {
   if(state.page==='inbox')loadSignals().catch(showError);
   if(state.page==='catalog')loadCatalog().catch(showError);
   if(state.page==='followups')loadFollowups();
+  if(state.page==='pesashield')refreshFraud().catch(showError);
   if(['activity','connections'].includes(state.page))loadIntake().catch(showError);
 }
 window.addEventListener('hashchange',route);
@@ -402,7 +403,6 @@ async function startWorkspace(){
     await Promise.all([refresh(),loadIntake(),loadFollowups()]);
   }catch(error){showError(error);}
 }
-startWorkspace();
 let autoRefreshing=false;
 async function refreshAutomatically(){
   if(autoRefreshing||document.hidden||document.querySelector('dialog[open]')||document.activeElement?.matches('input,textarea,select'))return;
@@ -415,34 +415,63 @@ setInterval(refreshAutomatically,8000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAutomatically();});
 
 
-async function loadFraudInsights(){
-  try{
-    const res = await fetch(api('/api/pesashield/insights'));
-    if(!res.ok) return;
-    const data = await res.json();
-    if($('fraud-total')) $('fraud-total').textContent = data.kpis.total;
-    if($('fraud-scam')) $('fraud-scam').textContent = data.kpis.scam;
-    if($('fraud-suspicious')) $('fraud-suspicious').textContent = data.kpis.suspicious;
-    if($('fraud-reviewed')) $('fraud-reviewed').textContent = data.kpis.reviewed;
-  }catch(e){}
+let fraudCheckVersion=0, fraudHistoryVersion=0;
+const fraudLabels={scam:'High fraud risk',suspicious:'Suspicious - verify first',legit:'Looks legitimate',unknown:'Unable to determine'};
+function pesaTag(verdict,label){return `<span class="pesa-tag ${['scam','suspicious','legit','unknown'].includes(verdict)?verdict:'unknown'}">${esc(label||fraudLabels[verdict]||'Needs verification')}</span>`;}
+function resetFraudResult(){fraudCheckVersion++;$('fraud-result').hidden=true;$('fraud-result').innerHTML='';}
+function renderFraudResult(data){
+  const r=data.receipt||{}, facts=[];
+  if(r.reference)facts.push(['Reference',r.reference]);
+  if(r.amount!=null)facts.push(['Transaction amount','KES '+number(r.amount)]);
+  if(r.transaction_type)facts.push(['Transaction type',r.transaction_type]);
+  if(r.counterparty)facts.push(['Name / number in the text',r.counterparty]);
+  if(r.timestamp)facts.push(['Date and time',r.timestamp]);
+  if(r.balance!=null)facts.push(['Stated balance','KES '+number(r.balance)]);
+  const evidence=(data.reasons||[]).length?`<ul class="pesa-evidence">${data.reasons.map(item=>`<li class="${esc(item.severity)}"><b>${esc(item.title)}</b><span>${esc(item.detail)}</span></li>`).join('')}</ul>`:`<ul class="pesa-checks">${(r.checks||[]).map(item=>`<li>${esc(item)}</li>`).join('')||'<li>No complete M-PESA receipt was recognised. Paste the full original message.</li>'}</ul>`;
+  $('fraud-result').innerHTML=`<div class="pesa-result-heading"><div class="card-kicker">MESSAGE ASSESSMENT</div>${pesaTag(data.verdict,data.verdict_label)}</div><h3>${esc(data.summary)}</h3><div class="pesa-scope"><b>Payment not verified</b><p>${esc(data.verification.note)}</p></div>${facts.length?`<h4>Details found in the message</h4><dl class="pesa-facts">${facts.map(([key,value])=>`<div><dt>${esc(key)}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>`:''}<h4>Why this result?</h4>${evidence}<h4>What to do next</h4><ol class="pesa-advice">${(data.advice||[]).map(item=>`<li>${esc(item)}</li>`).join('')}</ol><p class="footnote">${data.saved?data.deduplicated?'This identical check was already in your private history.':'Saved in your private workspace history.':'This check has not been saved to workspace history.'}</p>`;
+  $('fraud-result').hidden=false;
+  $('fraud-result').scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
 }
+$('fraud-check-form').onsubmit=async event=>{
+  event.preventDefault();
+  const revision=++fraudCheckVersion;
+  const text=$('fraud-sms-text').value.trim();
+  if(!text){toast('Paste the message you want to check.',true);return;}
+  $('fraud-result').hidden=true;
+  await busy($('fraud-check-submit'),'Analysing…',async()=>{
+    try{
+      const result=await api('/api/pesashield/sms/check',{method:'POST',body:JSON.stringify({text,sender:$('fraud-sender').value.trim()||null,expected_amount:$('fraud-expected').value||null,channel:'sms'})});
+      if(revision!==fraudCheckVersion)return;
+      renderFraudResult(result);await refreshFraud();
+    }catch(error){if(revision===fraudCheckVersion)toast(error.message,true);}
+  });
+};
+for(const id of ['fraud-sms-text','fraud-sender','fraud-expected'])$(id).addEventListener('input',resetFraudResult);
+$('fraud-clear').onclick=()=>{$('fraud-check-form').reset();resetFraudResult();$('fraud-sms-text').focus();};
+document.querySelectorAll('[data-fraud-sample]').forEach(button=>button.onclick=()=>{
+  resetFraudResult();$('fraud-check-form').reset();
+  const stamp=new Intl.DateTimeFormat('en-GB',{timeZone:'Africa/Nairobi',day:'2-digit',month:'2-digit',year:'2-digit'}).format(new Date());
+  $('fraud-sms-text').value=button.dataset.fraudSample==='receipt'?`UJ01ABC123 Confirmed. You have received Ksh5,000.00 from DEMO CUSTOMER 0712***456 on ${stamp} at 9:00 AM. New M-PESA balance is Ksh6,250.00. Transaction cost, Ksh0.00. Never share your PIN.`:'M-PESA: Your account will be blocked today. Send your M-PESA PIN and OTP to 0712000000 to reverse Ksh5,000 sent by mistake.';
+  $('fraud-sender').value=button.dataset.fraudSample==='receipt'?'M-PESA':'';
+  $('fraud-sms-text').focus();
+});
+async function refreshFraud(){
+  const revision=++fraudHistoryVersion;
+  const [insights,reports]=await Promise.all([api('/api/pesashield/insights'),api('/api/pesashield/reports')]);
+  if(revision!==fraudHistoryVersion)return;
+  $('fraud-metrics').hidden=!reports.history_available;
+  $('fraud-history-table').hidden=!reports.history_available;
+  for(const key of ['total','scam','legit','unverified'])$('fraud-'+key).textContent=number(insights.kpis[key]);
+  $('fraud-history-note').textContent=reports.history_available?'Saved checks are text assessments. Team review labels do not verify the transaction.':'History stays private: checks in the public demo or a workspace without a protected sign-in are not stored.';
+  $('fraud-rows').innerHTML=reports.items.length?reports.items.map(r=>`<tr><td><small>${esc(timeLabel(r.ts))}</small></td><td>${pesaTag(r.verdict,r.assessment_label)}</td><td><small>${esc(r.body_preview)}</small></td><td>${r.reviewed_verdict?`<small>Team label: ${esc(fraudLabels[r.reviewed_verdict]||r.reviewed_verdict)}</small>`:''}<div class="pesa-review-actions"><button class="text-button" data-fraud-review="${r.id}" data-verdict="scam">Flag fraud</button><button class="text-button" data-fraud-review="${r.id}" data-verdict="suspicious">Needs review</button><button class="text-button" data-fraud-review="${r.id}" data-verdict="legit">Looks legitimate</button></div></td></tr>`).join(''):'<tr><td colspan="4">No saved checks yet. Analyse a message to begin.</td></tr>';
+}
+$('fraud-refresh').onclick=()=>busy($('fraud-refresh'),'Refreshing…',()=>refreshFraud().catch(error=>toast(error.message,true)));
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-fraud-review]');if(!button)return;
+  await busy(button,'Saving…',async()=>{
+    try{await api('/api/pesashield/reports/'+button.dataset.fraudReview+'/review',{method:'PATCH',body:JSON.stringify({verdict:button.dataset.verdict})});await refreshFraud();toast('Team review saved.');}
+    catch(error){toast(error.message,true);}
+  });
+});
 
-async function loadFraudReports(){
-  try{
-    const res = await fetch(api('/api/pesashield/reports'));
-    if(!res.ok) return;
-    const data = await res.json();
-    const rows = $('fraud-rows');
-    if(!rows) return;
-    if(!data.items.length){rows.innerHTML='<tr><td colspan="6">No reports yet.</td></tr>';return;}
-    rows.innerHTML = data.items.map(r=>`<tr><td><small>${esc(r.ts?.slice(0,16)||'')}</small></td><td><span class="tag ${r.verdict==='scam'?'amber':r.verdict==='suspicious'?'blue':''}">${esc(r.verdict)}</span>${r.reviewed_verdict?'<small>✓ '+esc(r.reviewed_verdict)+'</small>':''}</td><td>${r.risk_score?.toFixed? r.risk_score.toFixed(2):r.risk_score}</td><td><small>${(r.reason_codes||[]).join(', ')}</small></td><td><small>${esc(r.body_preview)}</small></td><td><button class="button small" data-fraud-review="${r.id}" data-verdict="scam">Mark scam</button> <button class="button small" data-fraud-review="${r.id}" data-verdict="legit">Mark legit</button></td></tr>`).join('');
-    rows.querySelectorAll('[data-fraud-review]').forEach(btn=>{
-      btn.onclick=async()=>{
-        const id=btn.dataset.fraudReview, verdict=btn.dataset.verdict;
-        const res=await fetch(api('/api/pesashield/reports/'+id+'/review'),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({verdict})});
-        if(res.ok){toast('Review saved');loadFraudReports();loadFraudInsights();}
-        else{const j=await res.json().catch(()=>({}));toast(j.error||'Failed');}
-      };
-    });
-  }catch(e){}
-}
+startWorkspace();
