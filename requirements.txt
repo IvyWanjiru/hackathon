@@ -1,4 +1,5 @@
 flask>=3.0,<4
 gunicorn>=25,<26
+python-dotenv>=1,<2
 scikit-learn>=1.5,<2
 anthropic>=0.40,<1   # optional: richer extraction when ANTHROPIC_API_KEY is set

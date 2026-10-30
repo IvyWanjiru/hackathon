@@ -5,7 +5,7 @@ const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 const number = value => Number(value || 0).toLocaleString(undefined, {maximumFractionDigits:2});
 const money = totals => Object.entries(totals || {}).map(([currency,value]) => `${currency === 'UNKNOWN' ? 'Unspecified currency' : currency} ${number(value)}`).join(' · ');
 const date = value => new Date(value).toLocaleDateString(undefined, {month:'short',day:'numeric'});
-const state = {page:'overview',filters:{q:'',days:'30',source:'',status:'',reason:'',review:''},signalPage:1,insights:null,signals:new Map(),draft:null,imports:[],requestVersion:0,signalRequestVersion:0,captureVersion:0,followupsVersion:0,followups:{status:'active',q:'',owner:'',urgency:'all',due:'all',page:1}};
+const state = {page:'overview',filters:{q:'',days:'30',source:'',status:'',reason:'',review:''},signalPage:1,insights:null,signals:new Map(),draft:null,imports:[],requestVersion:0,signalRequestVersion:0,captureVersion:0,followupsVersion:0,intakeVersion:0,followups:{status:'active',q:'',owner:'',urgency:'all',due:'all',page:1}};
 let toastTimer, filterTimer, recognition;
 
 function toast(message, error=false) {
@@ -18,10 +18,14 @@ function toast(message, error=false) {
 async function api(path, options={}) {
   const headers = {...(cfg.demo ? {'X-Ghost-Demo':'1'} : {}),...options.headers};
   if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+  if(cfg.csrf)headers['X-Ghost-CSRF']=cfg.csrf;
   const response = await fetch(path, {...options, headers});
   let payload;
   try { payload = await response.json(); } catch { throw new Error('The server returned an unexpected response. Please try again.'); }
-  if (!response.ok) throw new Error(payload.error || 'The request failed. Please try again.');
+  if (!response.ok) {
+    if(response.status===401&&payload.login_required)location.assign('/login?next='+encodeURIComponent(location.pathname+location.hash));
+    throw new Error(payload.error || 'The request failed. Please try again.');
+  }
   return payload;
 }
 async function busy(button, label, action) {
@@ -62,19 +66,20 @@ document.querySelectorAll('.filterbar').forEach(bar => {
 });
 function route() {
   const requested=location.hash.slice(1) || 'overview';
-  const page=requested==='learning'?'followups':requested;
-  if(requested==='learning')history.replaceState(null,'','#followups');
-  state.page=['overview','inbox','capture','followups','catalog','connections','pesashield'].includes(page)?page:'overview';
+  const page=['learning','model'].includes(requested)?'activity':requested;
+  if(page!==requested)history.replaceState(null,'','#activity');
+  state.page=['overview','inbox','capture','followups','catalog','connections','pesashield','activity'].includes(page)?page:'overview';
   document.querySelectorAll('.page').forEach(element=>{element.hidden=element.id!=='page-'+state.page;});
   document.querySelectorAll('[data-nav]').forEach(link=>{
     const selected=link.dataset.nav===state.page;link.classList.toggle('active',selected);
     if(selected)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');
   });
-  $('page-label').textContent={overview:'Opportunities',inbox:'Signal inbox',capture:'Capture request',followups:'Follow-up queue',catalog:'Product aliases',connections:'Channels & import',pesashield:'PesaShield AI'}[state.page];
+  $('page-label').textContent={overview:'Opportunities',inbox:'Signal inbox',capture:'Add a note',followups:'Follow-up queue',catalog:'Product aliases',connections:'Channels & import',pesashield:'PesaShield AI',activity:'Channel activity'}[state.page];
   window.scrollTo(0,0);
   if(state.page==='inbox')loadSignals().catch(showError);
   if(state.page==='catalog')loadCatalog().catch(showError);
   if(state.page==='followups')loadFollowups();
+  if(['activity','connections'].includes(state.page))loadIntake().catch(showError);
 }
 window.addEventListener('hashchange',route);
 function showError(error) {$('global-error').textContent=error.message;$('global-error').hidden=false;}
@@ -93,7 +98,7 @@ function renderOverview(data) {
   const k=data.kpis;
   $('metrics').innerHTML=`<div class="metric"><span>Captured requests</span><b>${number(k.signals)}</b><small>Across channels in this view</small></div><div class="metric"><span>Active opportunities</span><b>${number(k.active_opportunities)}</b><small>Products with open requests</small></div><div class="metric"><span>Awaiting review</span><b>${number(k.needs_review)}</b><small>Check request details</small></div><div class="metric"><span>Recorded recoveries</span><b>${number(k.recovered)}</b><small>${esc(money(k.recovered_value)||'Record outcomes after follow-up')}</small></div>`;
   $('opportunity-count').textContent=`${data.demand.length} ${data.demand.length===1?'product':'products'}`;
-  $('opportunities').innerHTML=data.demand.length ? data.demand.map(renderOpportunity).join('') : `<div class="empty-card"><h3>Your next opportunity starts here.</h3><p>${k.signals?'Try a broader filter to see customer demand.':'Capture a missed request to find patterns across products, channels and blockers.'}</p><a class="button primary" href="#capture">Capture the first request</a>${cfg.demo?' <button class="button" data-seed>Load retail demo</button>':' <a class="button" href="/demo">Explore sample demand</a>'}</div>`;
+  $('opportunities').innerHTML=data.demand.length ? data.demand.map(renderOpportunity).join('') : `<div class="empty-card"><h3>Your next opportunity starts here.</h3><p>${k.signals?'Try a broader filter to see customer demand.':'Connect your business channels. New missed requests are analysed and added automatically.'}</p><a class="button primary" href="#connections">Set up automatic capture</a>${cfg.demo?' <button class="button" data-seed>Load retail demo</button>':' <a class="button" href="/demo">Explore sample demand</a>'}</div>`;
   const reasons=Object.entries(data.reasons).sort((a,b)=>b[1]-a[1]);
   const maximum=Math.max(1,...reasons.map(r=>r[1]));
   $('reason-bars').innerHTML=reasons.length?reasons.map(([reason,count])=>`<div class="bar-item"><div class="bar-label"><span>${esc(cfg.reasons[reason]||reason)}</span><b>${count}</b></div><div class="bar-track" role="img" aria-label="${esc(cfg.reasons[reason])}: ${count} requests"><div class="bar-fill" style="width:${100*count/maximum}%"></div></div></div>`).join(''):'<p class="footnote">Blockers appear once requests are captured.</p>';
@@ -338,7 +343,76 @@ $('export').onclick=()=>busy($('export'),'Preparing CSV…',async()=>{
   try{const response=await fetch('/api/signals/export?'+query(),{headers:cfg.demo?{'X-Ghost-Demo':'1'}:{}});if(!response.ok)throw new Error('Unable to export this view.');download(await response.blob(),'ghostdemand-signals.csv');}
   catch(error){toast(error.message,true);}
 });
-route();refresh();if(state.page!=='followups')loadFollowups();
+function timeLabel(value) {
+  return value ? new Date(value).toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : 'No events received';
+}
+async function loadIntake() {
+  const revision=++state.intakeVersion;
+  const [data,connections]=await Promise.all([api('/api/intake'),cfg.demo?Promise.resolve(null):api('/api/connections')]);
+  if(revision!==state.intakeVersion)return;
+  const k=data.summary;
+  const providers=connections?.providers||{};
+  const ready=data.relay_configured||providers.gmail?.state==='listening'||['verified','receiving'].includes(providers.whatsapp?.state);
+  $('automatic-status').textContent=cfg.demo?'Automatic capture · sample workspace':ready?'Automatic intake ready':'Automatic capture needs setup';
+  $('automatic-detail').textContent=k.total?`${k.captured} captured · ${k.needs_context} awaiting context · updated ${new Date().toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'})}`:cfg.demo?'Send sample channel events to see requests processed automatically.':ready?'Waiting for your first incoming enquiry.':'Connect your business channels to start receiving enquiries.';
+  document.querySelector('.automatic-indicator').classList.toggle('ready',cfg.demo||ready);
+  $('intake-metrics').innerHTML=`<div class="metric"><span>Incoming events</span><b>${number(k.total)}</b><small>Received from business channels</small></div><div class="metric"><span>Demand captured</span><b>${number(k.captured)}</b><small>Analysed and added automatically</small></div><div class="metric"><span>Needs context</span><b>${number(k.needs_context)}</b><small>Outcome still to confirm</small></div><div class="metric"><span>Needs retry</span><b>${number(k.failed)}</b><small>Retained so processing can be retried</small></div>`;
+  $('intake-feed').innerHTML=data.items.length?data.items.map(item=>`<article class="intake-event"><div class="intake-event-top"><span class="tag">${esc(item.source_name)}</span><time datetime="${esc(item.received_at)}">${esc(timeLabel(item.received_at))}</time><span class="tag ${item.state==='captured'?'green':item.state==='needs_context'?'amber':''}">${esc(item.state_name)}</span></div><blockquote>${esc(item.text)}</blockquote><p>${esc(item.detail||'Processing incoming request…')}</p><div class="intake-event-actions">${item.signal_id?`<button class="text-button" data-open-incoming="${item.signal_id}">View request & next step →</button>`:''}${item.state==='needs_context'?`<button class="button small" data-intake="${item.id}" data-intake-action="confirm_unmet">Confirm missed request</button><button class="text-button" data-intake="${item.id}" data-intake-action="dismiss">No missed request</button>`:''}${item.state==='failed'?`<button class="button small" data-intake="${item.id}" data-intake-action="retry">Retry analysis</button>`:''}</div></article>`).join(''):`<div class="empty-card"><h3>Your channels will bring the requests here.</h3><p>${cfg.demo?'Send the synthetic sample events to see automatic capture, analysis and an enquiry that needs more context.':'Connect a business channel to begin. New events are processed on the server and appear here automatically.'}</p><a class="button" href="#connections">View channels →</a></div>`;
+  $('channel-cards').innerHTML=data.channels.map(channel=>{
+    const provider=providers[channel.id==='email'?'gmail':channel.id];
+    const connected=provider?.state==='listening'||['verified','receiving'].includes(provider?.state);
+    const attention=channel.failures||provider?.state==='attention';
+    const label=attention?'Needs attention':channel.events?'Events received':cfg.demo?'No sample traffic':connected||data.relay_configured?'Waiting for first event':provider?.configured?'Finish connecting':'Setup needed';
+    return `<article class="card channel-card"><div class="channel-card-top"><span class="channel-avatar">${esc(channel.name.slice(0,2).toUpperCase())}</span><span class="tag ${attention?'amber':channel.events||connected?'green':''}">${label}</span></div><h2>${esc(channel.name)}</h2><p>${esc(channel.description)}</p><div class="channel-card-bottom"><b>${number(channel.events)} ${channel.events===1?'event':'events'}</b><small>${esc(timeLabel(channel.last_event_at))}</small></div></article>`;
+  }).join('');
+  if(connections)renderProviders(connections);
+}
+function renderProviders(data){
+  if(cfg.demo||!$('provider-connections'))return;
+  const wa=data.providers.whatsapp, gmail=data.providers.gmail;
+  $('provider-connections').innerHTML=`<article class="card provider-card"><div class="card-kicker">WHATSAPP BUSINESS · META CLOUD API</div><h2>Receive real WhatsApp enquiries</h2><span class="tag ${wa.state==='receiving'?'green':wa.state==='verified'?'blue':'amber'}">${wa.state==='receiving'?'Messages received':wa.state==='verified'?'Webhook verified':wa.configured?'Waiting for verification':'Setup needed'}</span><p>Incoming text messages are captured and analysed automatically. Replies and media downloads are not enabled.</p>${wa.callback_url?`<label>Callback URL</label><code class="callback-url">${esc(wa.callback_url)}</code>`:'<p class="footnote">Set the public HTTPS address on the server to show the callback URL.</p>'}<p class="footnote">${wa.last_message_at?'Last message: '+esc(timeLabel(wa.last_message_at)):wa.verified_at?'Verified: '+esc(timeLabel(wa.verified_at)):'Your administrator configures the Meta app secret, phone number ID and verification token on the server.'}</p></article><article class="card provider-card"><div class="card-kicker">GMAIL · READ-ONLY DEMO LABEL</div><h2>Receive real email enquiries</h2><span class="tag ${gmail.state==='listening'?'green':'amber'}">${gmail.state==='listening'?'Listening':gmail.state==='attention'?'Needs attention':gmail.configured?'Ready to connect':'Setup needed'}</span><p>${esc(gmail.message||'Start the listener to receive new enquiries.')}</p><div class="provider-detail"><span>Watched label</span><b>${esc(gmail.label)}</b></div><p class="footnote">${gmail.last_success_at?'Last successful check: '+esc(timeLabel(gmail.last_success_at)):'Existing mailbox messages are not imported when the label is first connected.'}</p><button class="button small" id="check-new-email" ${gmail.configured?'':'disabled'}>Check new email</button></article>`;
+  if($('check-new-email'))$('check-new-email').onclick=()=>busy($('check-new-email'),'Checking…',async()=>{
+    try{const result=await api('/api/connections/gmail/check',{method:'POST',body:'{}'});await Promise.all([loadIntake(),refresh()]);toast(result.state==='busy'?'The Gmail listener is already checking for new enquiries.':result.baseline?'Gmail is listening. Send a new demo enquiry now.':`${result.imported||0} new emails processed.`);}
+    catch(error){toast(error.message,true);loadIntake().catch(()=>{});}
+  });
+}
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('button');if(!button)return;
+  if(button.dataset.intake){
+    await busy(button,'Saving…',async()=>{
+      try{await api(`/api/intake/${button.dataset.intake}/resolve`,{method:'POST',body:JSON.stringify({action:button.dataset.intakeAction})});await Promise.all([loadIntake(),refresh(),loadFollowups()]);toast('Incoming request updated.');}
+      catch(error){toast(error.message,true);}
+    });
+  }
+  if(button.dataset.openIncoming){
+    try{
+      const result=await api('/api/signals/'+button.dataset.openIncoming);
+      state.signals.set(result.id,result);openSignal(result.id);
+    }catch(error){toast(error.message,true);}
+  }
+});
+if($('simulate-intake'))$('simulate-intake').onclick=()=>busy($('simulate-intake'),'Receiving sample events…',async()=>{
+  try{const result=await api('/api/demo/intake',{method:'POST',body:'{}'});await Promise.all([loadIntake(),refresh(),loadFollowups()]);toast(result.message);}
+  catch(error){toast(error.message,true);}
+});
+async function startWorkspace(){
+  route();
+  try{
+    if(cfg.demo)await api('/api/demo/seed',{method:'POST'});
+    await Promise.all([refresh(),loadIntake(),loadFollowups()]);
+  }catch(error){showError(error);}
+}
+startWorkspace();
+let autoRefreshing=false;
+async function refreshAutomatically(){
+  if(autoRefreshing||document.hidden||document.querySelector('dialog[open]')||document.activeElement?.matches('input,textarea,select'))return;
+  autoRefreshing=true;
+  try{await Promise.all([loadIntake(),refresh(),...(state.page==='followups'?[loadFollowups()]:[])]);}
+  catch(error){$('automatic-status').textContent='Automatic updates paused';$('automatic-detail').textContent='The server could not be reached. Updates will retry automatically.';}
+  finally{autoRefreshing=false;}
+}
+setInterval(refreshAutomatically,8000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshAutomatically();});
 
 
 async function loadFraudInsights(){
@@ -372,15 +446,3 @@ async function loadFraudReports(){
     });
   }catch(e){}
 }
-
-async function loadFraudModel(){
-  try{
-    const res = await fetch(api('/api/pesashield/model'));
-    if(!res.ok) return;
-    const data = await res.json();
-    const el = $('fraud-model-status');
-    if(!el) return;
-    el.innerHTML = `<small>Ready: ${data.ready?'yes':'no'} · Threshold: ${data.threshold}<br>Version: ${data.metadata?.version||'-'}</small>`;
-  }catch(e){}
-}
-

@@ -1,46 +1,16 @@
-# GhostDemand AI — panel presentation guide
+# GhostDemand — speaker notes
 
-**Pitch:** GhostDemand turns requests a retailer could not fulfil into evidence for what to stock, change and follow up on next.
+The application now presents a business workspace. Training, model scores and notebook experiments stay in backend documentation; `/present` redirects to `/demo#activity`.
 
-Open **http://127.0.0.1:5059/present**. This is a guided view of the working local app. It uses an isolated demo database and synthetic requests. The regular retail dashboard remains at `/demo`; the business workspace remains at `/dashboard`.
+## Three-minute operational story
 
-## Three-minute script and clicks
+- **0:00–0:30:** A completed sale cannot reveal every request the shop could not fulfil. GhostDemand retains that evidence and gives the team a next step.
+- **0:30–1:15:** In Channel activity, click **Send sample channel events**. State that these are synthetic events, not connected accounts. Four are saved and analysed automatically; one needs context. Repeat delivery is counted once.
+- **1:15–2:00:** Inspect a captured request and its original message. Open Opportunities to show the related requests and recommended stock, price or delivery action.
+- **2:00–2:35:** Assign an owner, follow-up date and next action. Distinguish team-entered sample recoveries from verified orders and real revenue impact.
+- **2:35–3:00:** Explain the pilot: connect a retailer's channel relays, measure extraction quality and response time, then verify recoveries against actual orders.
 
-### 0:00–0:25 · The problem
-
-“A sale tells a retailer what sold. It does not explain the customer who asked for a product that was unavailable, too expensive or too late. GhostDemand keeps that missed request and turns it into evidence the team can act on.”
-
-Click **Start the three-minute demo**. Say clearly that the requests and outcomes are synthetic. The stage illustration is an authored example; the following steps use the actual app APIs.
-
-### 0:25–1:00 · Capture
-
-“Here is a request for two earbuds that are sold out. The backend extracts a draft: product, quantity, budget and blocker. I can correct it before saving. The budget is an expression of interest; it is not revenue.”
-
-Click **Extract the demand signal**. Check product, quantity, budget, currency and blocker. Tick the review box, then **Save reviewed sample**. If repeating a rehearsal, the app reports an existing request instead of adding a duplicate. This does not overwrite its earlier review.
-
-### 1:00–1:25 · Evidence
-
-“The workspace groups related requests and preserves the original wording. We can see how many requests, known references and channel labels support this opportunity. Transparent business rules suggest a next step based on the recorded blockers.”
-
-Advance to **Evidence**. Point to the current counts, original messages and explanation. Known references are labels supplied with requests, not verified unique buyers. A channel label does not prove that a live provider account is connected. There are 24 starter requests across five products; subsequent counts reflect what has actually been saved in the demo.
-
-### 1:25–1:50 · Action
-
-“An insight is useful when someone owns the response. I assign this request to a team member with a date and an action. The workspace also records outcomes. Real recovered revenue needs an order link; this demo shows synthetic, team-entered amounts.”
-
-Advance to **Take action**. Save the follow-up and show the confirmation. This updates the demo record and queue. It does not send a customer message or place an order. The recovery figure comes from existing sample records; assigning this follow-up does not create revenue.
-
-### 1:50–2:35 · Machine learning
-
-“We convert the request text into TF-IDF features: weighted character fragments. A logistic regression classifier learns weights for six reasons a purchase failed. Its scores guide the blocker suggestion; a person reviews it. Product parsing and prioritisation use separate rules. The accompanying notebook achieved macro F1 of 0.860 on 21 synthetic test requests, but accepted none automatically at its selected threshold. This is a workflow experiment, not evidence of real-customer accuracy.”
-
-Advance to **The ML**. Point to the four-step diagram. The left card describes the baseline currently serving this demo; the right card describes a **separate notebook experiment**. Do not describe them as the same trained artifact. If the notebook changes and the evaluation snapshot no longer matches its hash, the score is hidden until it is reviewed again.
-
-### 2:35–3:00 · Pilot
-
-“Our next step is one retailer: connect the actual channels, label real unmet requests, and evaluate by channel, language and time. Then measure useful actions and order-verified recoveries. The contribution is the complete loop from missed request to evidence, ownership and learning.”
-
-Finish on **What’s next**. Open the retail workspace for questions, or download the notebook and these notes. No customer trial, commercial uplift or production connection is claimed.
+Use the following material for technical questions, outside the business interface.
 
 ## Understand the model before the panel
 
@@ -112,23 +82,8 @@ The F1 is the candidate's raw classification result, not the accuracy of automat
 
 **What is required before deployment?** Representative first-party evaluation, a versioned release and rollback process, access controls, tenant isolation, provider webhook verification, retention controls and order-linked outcome measurement. Monitor label distributions and sampled reviewer disagreement over time. There is no unattended production deployment in this walkthrough.
 
-## Rehearsal checklist
+## Rehearsal
 
-1. Start the app from the project root: `PORT=5059 .venv/bin/python app.py`.
-2. Visit `/present`, start the sample setup, and run capture → review → save → evidence → follow-up once before the session. Keep the local model dependencies installed. The local demo does not require a hosted language-model call.
-3. Use text capture for the stage demonstration. Browser voice support and microphone/network permissions can vary.
-4. Use **← / →** for chapters, **N** for notes and **F** for fullscreen when the browser supports it. Input fields keep their normal keyboard behaviour.
-5. The three-minute timer is optional: start/pause with its play button and reset with ↺. Opening a scene never starts it automatically.
-6. Repeat rehearsals safely: sample setup is idempotent; exact repeated samples reuse a request. The demo database persists, so counts can exceed the original 24. Never describe a repeated sample as a fresh customer.
-7. Download the notebook and notes beforehand. Keep the regular workspace available for deeper questions. If an API fails, the app displays the error; it does not invent successful results.
+Run `PORT=5059 .venv/bin/python app.py`, then open `/demo#activity`. Use the text-based sample event button so the stage demo does not depend on microphone permissions. The backend handles normalization, analysis, storage and duplicate handling. Confirming an unclear outcome remains a team action; it does not automatically create a verified training label.
 
-## Method references
-
-- [scikit-learn text feature extraction](https://scikit-learn.org/stable/modules/feature_extraction.html#text-feature-extraction)
-- [scikit-learn logistic regression](https://scikit-learn.org/stable/modules/linear_model.html#logistic-regression)
-- [SetFit documentation](https://huggingface.co/docs/setfit/en/index)
-- [Bitext retail/e-commerce dataset](https://huggingface.co/datasets/bitext/Bitext-retail-ecommerce-llm-chatbot-training-dataset)
-- [Amazon Science ESCI dataset](https://github.com/amazon-science/esci-data)
-- [UCI Online Retail II](https://archive.ics.uci.edu/dataset/502/online+retail+ii)
-
-The notebook is the experiment record; the app's live model-status endpoint is the serving record. Keep those two sources distinct when quoting results.
+Read [BACKEND_AUTOMATION.md](BACKEND_AUTOMATION.md) for real channel setup. No actual WhatsApp, email or voice provider account is connected by the sample traffic.

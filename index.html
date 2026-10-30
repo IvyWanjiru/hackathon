@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="description" content="GhostDemand turns missed customer requests into evidence for better stock, product and follow-up decisions.">
-<title>GhostDemand AI · Demand beyond the sale</title>
+<title>Mteja-Insight · Demand beyond the sale</title>
 <link rel="stylesheet" href="{{ url_for('static',filename='styles.css') }}">
 </head>
 <body>
@@ -13,17 +13,18 @@
   <svg viewBox="0 0 40 44" aria-hidden="true">
     <path d="M5 37V19a15 15 0 0 1 30 0v18l-7-4-8 6-8-6z" fill="currentColor"/>
     <circle cx="15" cy="19" r="2" fill="#141b36"/><circle cx="25" cy="19" r="2" fill="#141b36"/></svg>
-    <span>GhostDemand<small>DEMAND BEYOND THE SALE</small></span></a>
+    <span>Mteja-Insight<small>DEMAND BEYOND THE SALE</small></span></a>
  <div class="workspace"><span class="workspace-icon">R</span>
   <div>Retail workspace<small>{{ 'Demo · synthetic data' if demo else 'Local workspace' }}</small></div></div>
  <nav aria-label="Main navigation">
   <a href="#overview" data-nav="overview"><span aria-hidden="true">◈</span>Opportunities</a>
   <a href="#inbox" data-nav="inbox"><span aria-hidden="true">▤</span>Signal inbox<span id="nav-review" class="nav-count"></span></a>
-  <a href="#capture" data-nav="capture"><span aria-hidden="true">＋</span>Capture request</a>
+  <a href="#activity" data-nav="activity"><span aria-hidden="true">⌁</span>Channel activity</a>
   <p>YOUR WORKSPACE</p>
   <a href="#followups" data-nav="followups"><span aria-hidden="true">↗</span>Follow-up queue</a>
   <a href="#catalog" data-nav="catalog"><span aria-hidden="true">▦</span>Product aliases</a>
   <a href="#connections" data-nav="connections"><span aria-hidden="true">⌁</span>Channels & import</a>
+  <a href="#capture" data-nav="capture"><span aria-hidden="true">＋</span>Add a note</a>
     <a href="#pesashield" data-nav="pesashield"><span aria-hidden="true">🛡</span>PesaShield AI</a>
  </nav>
  <div class="sidebar-bottom">
@@ -38,9 +39,10 @@
   <div class="breadcrumb">Retail intelligence <span>/</span>
      <b id="page-label">Opportunities</b></div>
      <div class="top-actions">
-      {% if demo %}<a class="button small" href="/present">Panel walkthrough ↗</a>{% endif %}
+      <a class="button small" href="#activity">Channel activity ↗</a>
       <span class="workspace-indicator" id="workspace-status" role="status">Loading workspace…</span>
-      <a class="button small primary" href="#capture">＋ Capture request</a>
+      {% if not demo and session.get('workspace_authenticated') %}<form action="/logout" method="post"><input type="hidden" name="csrf" value="{{ config.csrf }}"><button class="button small" type="submit">Sign out</button></form>{% endif %}
+      <a class="button small" href="#capture">＋ Add a note</a>
   </div>
 </header>
 
@@ -50,12 +52,19 @@
     <b>Demo workspace</b> · All sample requests and outcomes are synthetic. Live records stay separate.</span>
     <button class="button small" id="seed-demo">Load retail demo</button></div>{% endif %}
  <div id="global-error" class="error-banner" role="alert" hidden></div>
+ <div class="automatic-strip" role="status"><span class="automatic-indicator" aria-hidden="true"></span><b id="automatic-status">Checking automatic capture…</b><span id="automatic-detail">New channel activity updates here automatically.</span><a href="#connections">Manage channels →</a></div>
+ <section id="page-activity" class="page" hidden>
+  <div class="page-heading"><div><p class="eyebrow">FROM EVERY CHANNEL TO ONE WORKSPACE</p><h1>Requests arrive. Opportunities surface.</h1><p class="lead">Incoming messages are analysed in the background. Your team sees the demand and the next step.</p></div>{% if demo %}<button class="button primary" id="simulate-intake">Send sample channel events</button>{% endif %}</div>
+  {% if demo %}<p class="activity-disclosure">Synthetic demonstration · The sample button sends five events through the backend intake process. It does not connect real provider accounts.</p>{% endif %}
+  <div class="metrics" id="intake-metrics"></div>
+  <div class="activity-layout"><div><div class="section-heading"><h2>Incoming activity</h2><span class="muted">Latest 20 events · refreshes automatically</span></div><div id="intake-feed" class="intake-feed"><div class="empty-card">Checking incoming activity…</div></div></div><aside class="insight-rail"><div class="card"><div class="card-kicker">AUTOMATIC CAPTURE</div><h2>From message to next step</h2><ol class="capture-flow"><li><b>A channel sends an enquiry</b><span>WhatsApp, email, your chatbot or sales system.</span></li><li><b>The request is organised</b><span>Product, quantity, budget and purchase blocker are identified in the background.</span></li><li><b>Your team acts</b><span>Inspect the evidence, assign a follow-up and record the outcome.</span></li></ol></div><div class="card soft-card"><h3>Keep uncertain enquiries in view.</h3><p>A message such as “Do you sell this?” needs context before it counts as a missed sale. Confirm the outcome here when it is known.</p></div></aside></div>
+ </section>
  <section id="page-overview" class="page">
   <div class="page-heading">
     <div>
       <p class="eyebrow">YOUR NEXT OPPORTUNITY IS ALREADY ASKING</p>
       <h1>Find the demand you’re missing.</h1>
-      <p class="lead">Turn “do you have…?” into a better stock decision, a new product, or a customer won back.</p>
+      <p class="lead">Automatically captured requests reveal what to restock, change and follow up on next.</p>
     </div>{% if not demo %}<a class="button" href="/demo">Try the guided demo ↗</a>{% endif %}</div>
   <div class="metrics" id="metrics">
     <div class="metric">
@@ -141,9 +150,9 @@
  <section id="page-capture" class="page" hidden>
   <div class="page-heading">
     <div>
-      <p class="eyebrow">CAPTURE → CHECK → ACT</p>
+      <p class="eyebrow">FOR AN OCCASIONAL OFFLINE REQUEST</p>
       <h1>What did the customer want?</h1>
-      <p class="lead">Paste a conversation or dictate a sales note. Check the extracted details before saving.</p>
+      <p class="lead">Connected channels capture requests automatically. Add a note here for a conversation that happened offline.</p>
     </div>
   </div>
 
@@ -346,56 +355,12 @@
     <div>
       <p class="eyebrow">START SMALL. CAPTURE FROM ANYWHERE.</p>
       <h1>Channels & import</h1>
-      <p class="lead">Paste requests today, import a CSV, or connect your store using the available API receivers.</p>
+      <p class="lead">See which channels are sending enquiries. Use a CSV for historical requests.</p>
     </div>
   </div>
-  <div class="connection-grid">
-    <div class="card">
-      <span class="tag green">Ready to use</span>
-      <h2>Conversations & sales notes</h2>
-      <p>Paste WhatsApp messages, chatbot transcripts, unaccepted quotations or abandoned enquiries. Dictate a sales note when your browser supports it.</p>
-      <a href="#capture" class="text-link">Capture a request →</a>
-    </div>
-    <div class="card">
-      <span class="tag amber">Receiver available · setup required</span>
-      <h2>WhatsApp</h2>
-      <p>A Twilio-style form receiver accepts Body, From and MessageSid. No WhatsApp account is connected by default.</p>
-      <details>
-        <summary>Integration endpoint</summary>
-        <code>POST /webhook/whatsapp</code>
-        <p class="footnote">Configure the provider and add webhook signature validation before public deployment.</p>
-      </details>
-    </div>
-    <div class="card">
-      <span class="tag amber">API available · setup required</span>
-      <h2>Website searches & stockouts</h2>
-      <p>Capture searches with zero results and explicit stockout requests. Pass an event ID so retries are counted once.</p>
-      <details>
-        <summary>Payload examples</summary>
-        <pre>POST /api/events/website-search
-            {"query":"wireless earbuds",
-            "results_count":0,
-            "event_id":"search-123"}
-
-            POST /api/events/stockout
-            {"product":"Wireless Earbuds",
-            "qty":2,"event_id":"stock-123"}</pre>
-          </details>
-        </div>
-        <div class="card">
-          <span class="tag amber">API available · setup required</span>
-          <h2>Chatbots, quotes & other channels</h2>
-          <p>Use the signal API with the right channel and a stable external ID. Conversation history stays available as evidence.</p>
-          <details>
-            <summary>Signal API example</summary>
-            <pre>POST /api/signals
-            {"text":"Need 2 wireless earbuds",
-            "source":"chatbot",
-            "external_id":"chat-123"}</pre>
-            <p class="footnote">These are working receivers, not pre-connected vendor accounts.</p>
-          </details>
-        </div>
-      </div>
+  <div class="channel-explainer"><h2>Connect once. Keep the requests.</h2><p>Your administrator connects each business channel to the intake service. After setup, new events are received, analysed and added to the workspace automatically. Voice channels supply transcripts.</p></div>
+  {% if demo %}<div class="card provider-notice"><h2>Ready for real messages?</h2><p>Connect WhatsApp Business and your Gmail demo label in the private live workspace. These sample records stay separate.</p><a class="button" href="/dashboard#connections">Open live channel setup →</a></div>{% else %}<div id="provider-connections" class="connection-grid"><div class="empty-card">Checking WhatsApp and Gmail…</div></div>{% endif %}
+  <div class="connection-grid" id="channel-cards"><div class="empty-card">Checking channel activity…</div></div>
   <div class="card import-card">
     <div class="section-heading">
       <div>
@@ -468,17 +433,10 @@
         </ul>
         <p class="footnote">Report: Safaricom 100 or 234. Never share your PIN.</p>
       </div>
-      <div class="card">
-        <div class="card-kicker">MODEL</div>
-        <h2>Fraud classifier</h2>
-        <div id="fraud-model-status">Loading...</div>
-        <button class="button small" id="fraud-train" style="margin-top:8px;">Train model</button>
-        <p class="footnote">Uses reviewed reports + starter data. Review→train loop.</p>
-      </div>
     </aside>
   </div>
  </section>
- <footer>GhostDemand AI <span>·</span> Turn unanswered demand into informed action.</footer>
+ <footer>Mteja-Insight <span>·</span> Turn unanswered demand into informed action.</footer>
  </main>
 
 </div>

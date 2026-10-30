@@ -48,35 +48,15 @@ reviewable demonstration of the complete loop.
 | The interface assumed technical users and had no presentation path. | Retail dashboard, plain-language actions, guided capture, filters, paginated inbox, CSV preview/export and an isolated demo workspace. | A judge or shop owner can understand the workflow without an API tutorial. |
 | No follow-through after an insight. | Owner, next action, open/follow-up/recovered/closed status and optional recorded recovered amount. | The team can show whether a decision led to a recorded recovery. |
 
-## Three-minute demo
+## Three-minute business demo
 
-For the panel, open **`/present`** for the guided six-chapter demo with live
-capture, evidence, follow-up, the ML explanation, keyboard navigation and an
-optional rehearsal timer. [Presenter script and Q&A](PANEL_PRESENTATION.md)
-explains the serving model and the separate notebook evaluation. The workspace
-walkthrough below remains useful for deeper questions.
+1. Open `/demo#activity`. Explain that all examples are synthetic. The frontend shows the team's work; model training stays on the backend.
+2. Click **Send sample channel events**. Five synthetic events are received from WhatsApp, email, chatbot, sales notes and a voice transcript. Four are captured automatically; an availability question waits for context. Repeat events are counted once.
+3. Open a captured request to inspect the product, blocker and original evidence. Go to **Opportunities** to show related demand and its suggested next step.
+4. Assign a next action and owner from **Follow-up queue**. Recorded sample recoveries are team-entered examples, not verified orders or demonstrated revenue lift.
+5. Open **Channels & import**. Explain that real providers must forward their events to the authenticated backend receiver. No business account is connected by the demonstration.
 
-1. **0:00–0:30 — The problem.** "Sales reports show what people bought. Our next
-   product decision also needs the requests we couldn't fulfil." Open `/demo` and
-   click **Load retail demo**. State that all 24 requests and sample outcomes are
-   synthetic.
-2. **0:30–1:10 — Evidence to action.** Open the Wireless Earbuds opportunity. Show
-   requests across channels, known customer references, blockers, the explicit
-   action suggestion and the underlying messages. These are observations, not a
-   sales forecast.
-3. **1:10–1:50 — Capture a new signal.** Choose **Capture request**, use the
-   sold-out-earbuds example, preview it, check the details and tick the verified
-   label box. Save it. Voice is optional and browser-dependent; keep text capture
-   ready for the stage demo.
-4. **1:50–2:25 — Close the loop.** Open a request, assign an owner and next action.
-   If demonstrating recovery, explicitly describe the amount as a simulated,
-   team-recorded outcome. No customer messages are sent.
-5. **2:25–3:00 — Work queue & honest scope.** Open **Follow-up queue**. Show who
-   owns the next action, when it is due, and how overdue work or recovered
-   requests can be filtered. Model training and evaluation are backend operations;
-   the retail team uses request review and follow-up tools. Close with the pilot question:
-   "Can this help a retailer discover an actionable product gap and recover a
-   request it would otherwise have forgotten?"
+See [the backend integration guide](BACKEND_AUTOMATION.md) for setup and [the speaker notes](PANEL_PRESENTATION.md) for an offline ML explanation and Q&A. Technical training/evaluation screens are not part of the business interface.
 
 ## Working now versus next
 

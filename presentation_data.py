@@ -1,4 +1,4 @@
-"""Provenance checks for the notebook experiment shown to a judging panel."""
+"""Provenance checks for the offline notebook experiment."""
 import hashlib
 import json
 import math
@@ -8,7 +8,7 @@ from pathlib import Path
 def notebook_evaluation(root):
     root = Path(root)
     try:
-        record = json.loads((root/'static'/'presentation-evaluation.json').read_text())
+        record = json.loads((root/'ml_workflow'/'presentation-evaluation.json').read_text())
         if not isinstance(record, dict):
             return None
         notebook = root/'notebooks'/'GhostDemand_Training_Improved.ipynb'

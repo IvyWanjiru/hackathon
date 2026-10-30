@@ -10,3 +10,13 @@ timeout = 120
 preload_app = True
 accesslog = '-'
 errorlog = '-'
+
+
+def when_ready(server):
+    from app import bootstrap_models
+    bootstrap_models()
+
+
+def post_worker_init(worker):
+    from app import start_channel_listeners
+    start_channel_listeners()

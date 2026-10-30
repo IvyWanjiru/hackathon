@@ -43,8 +43,8 @@ class PresentationTests(unittest.TestCase):
 
     def test_opening_and_downloads_do_not_seed_or_open_a_database(self):
         page = self.client.get('/present')
-        self.assertEqual(page.status_code, 200)
-        self.assertIn(b'SEPARATE NOTEBOOK EXPERIMENT', page.data)
+        self.assertEqual(page.status_code, 302)
+        self.assertEqual(page.headers['Location'], '/demo#activity')
         for path, filename in (('/present/notebook', 'GhostDemand_Training_Improved.ipynb'),
                                ('/present/notes', 'GhostDemand_Panel_Notes.md')):
             response = self.client.get(path)
@@ -55,12 +55,15 @@ class PresentationTests(unittest.TestCase):
         self.assertFalse((self.root / 'live.db').exists())
         self.assertFalse((self.root / 'demo.db').exists())
 
-    def test_stale_notebook_snapshot_hides_scores_without_breaking_page(self):
-        with patch('presentation_data.notebook_evaluation', return_value=None):
-            response = self.client.get('/present')
+    def test_business_frontend_does_not_show_training_internals(self):
+        response = self.client.get('/demo')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'Review the notebook before quoting a score', response.data)
+        self.assertIn(b'Channel activity', response.data)
         self.assertNotIn(b'Test macro F1', response.data)
+        self.assertNotIn(b'TF-IDF', response.data)
+        self.assertNotIn(b'Train model', response.data)
+        self.assertNotIn(b'Fraud classifier', response.data)
+        self.assertNotIn(b'presentation.js', response.data)
 
     def test_demo_rehearsal_is_idempotent_and_never_writes_live_requests(self):
         for _ in range(2):
@@ -101,12 +104,12 @@ class EvaluationProvenanceTests(unittest.TestCase):
         self.assertIsNotNone(notebook_evaluation(ghost.ROOT))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'static').mkdir()
+            (root / 'ml_workflow').mkdir()
             (root / 'notebooks').mkdir()
             notebook = root / 'notebooks' / 'GhostDemand_Training_Improved.ipynb'
             notebook.write_text('{"cells":[]}')
-            snapshot = root / 'static' / 'presentation-evaluation.json'
-            record = json.loads((ghost.ROOT / 'static' / snapshot.name).read_text())
+            snapshot = root / 'ml_workflow' / 'presentation-evaluation.json'
+            record = json.loads((ghost.ROOT / 'ml_workflow' / snapshot.name).read_text())
             record['notebook_sha256'] = hashlib.sha256(notebook.read_bytes()).hexdigest()
             snapshot.write_text(json.dumps(record))
             self.assertIsNotNone(notebook_evaluation(root))

@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
 SOURCE_NAMES = {
-    "whatsapp": "WhatsApp", "website_search": "Website search", "salesperson": "Sales notes",
+    "whatsapp": "WhatsApp", "email": "Email", "website_search": "Website search", "salesperson": "Sales notes",
     "salesperson_voice": "Voice note", "chatbot": "Chatbot", "rejected_quote": "Unaccepted quote",
     "unavailable_product": "Unavailable product", "out_of_stock": "Stockout", "abandoned_enquiry": "Abandoned enquiry",
 }
